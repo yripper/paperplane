@@ -12,6 +12,7 @@ Pure logic with no I/O: pending status, label precedence/reset rules, cleanup se
 
 | File | Purpose |
 |---|---|
+| `errors.ts` | `AppError` + `ErrorCode`: the one error type crossing module boundaries (`src/domain/errors.ts:13`) |
 | `pending.ts` | Auto status (pending/seen/clear) + label precedence |
 | `cleanup-criteria.ts` | Selects chats for `cleanup_plan` |
 | `rate-limiter.ts` | Sliding-window limiter |
