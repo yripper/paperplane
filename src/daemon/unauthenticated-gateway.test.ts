@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createUnauthenticatedGateway } from './unauthenticated-gateway.js';
+import { createUnauthenticatedGateway, NOT_CONNECTED } from './unauthenticated-gateway.js';
 
 describe('createUnauthenticatedGateway', () => {
   const g = createUnauthenticatedGateway();
@@ -32,5 +32,13 @@ describe('createUnauthenticatedGateway', () => {
 
   it('covers every gateway method', () => {
     expect(Object.keys(g).sort()).toEqual([...Object.keys(calls), 'iterDialogs'].sort());
+  });
+
+  it('tells the user to stop pm2 around login, since login takes the daemon lock', async () => {
+    await expect(g.markRead(1)).rejects.toThrow('pm2 stop paperplane && paperplane login && pm2 start paperplane');
+  });
+
+  it('uses the given message while connecting', async () => {
+    await expect(createUnauthenticatedGateway(NOT_CONNECTED).markRead(1)).rejects.toMatchObject({ code: 'AUTH_REQUIRED', message: NOT_CONNECTED });
   });
 });

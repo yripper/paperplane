@@ -83,6 +83,15 @@ describe('MCP tools', () => {
     expect(JSON.parse((await call('get_pending')).text)).toEqual([]);
   });
 
+  it('status answers from the store while Telegram is still connecting', async () => {
+    const made = makeToolDeps();
+    made.t.deps.sink.onMessage(tgMessage({ id: 1, text: 'hi' }), { live: true });
+    const c = await connect({ ...made.deps, status: () => ({ ...made.deps.status(), auth: 'connecting' }) });
+    const res = await c.callTool({ name: 'status', arguments: {} });
+    const body = JSON.parse((res.content as { text: string }[])[0]?.text ?? '{}') as { auth: string; chats: number; messages: number };
+    expect(body).toMatchObject({ auth: 'connecting', chats: 1, messages: 1 });
+  });
+
   it('cleanup_plan then cleanup_apply', async () => {
     const plan = JSON.parse((await call('cleanup_plan', { inactive_days: 1 })).text) as { planId: string; count: number };
     expect(plan.count).toBe(1);

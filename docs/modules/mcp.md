@@ -25,7 +25,7 @@ The MCP server Claude talks to: Streamable HTTP on `127.0.0.1`, bearer-token aut
 
 | Tool | Group | Ann. | What it does |
 |---|---|---|---|
-| `status` | read | R | Auth state, last update/sweep, store size |
+| `status` | read | R | Auth state (`ok` / `connecting` / `auth_required`), last update/sweep, store size; answers from the store in every state |
 | `list_chats` | read | R | Filtered chat list from the mirror |
 | `get_pending` | read | R | Chats waiting on my reply |
 | `read_history` | read | R (open world) | Messages newest first, backfills from Telegram if short |
@@ -75,4 +75,4 @@ Errors come back as `isError: true` with text `CODE: message` (plus `(retry afte
 
 ## Testing
 
-`src/mcp/http.test.ts` binds port 0 on `127.0.0.1` and covers 401 without token, 403 foreign Host, 404 other path, 405 GET, a real `initialize` round trip, and the `tokenMatches` / `hostAllowed` helpers. `src/mcp/server.test.ts` uses an in-memory MCP client (`connect` and `makeToolDeps` in `src/testing/tool-deps.ts`) against `FakeGateway` and an in-memory store. It covers: the tool list and annotations, `get_pending`, `read_history`, `search_messages`, `send_message` (success, empty text, `AUTH_REQUIRED`, `FLOOD_WAIT`, plain `Error` as `INTERNAL`), `delete_chat` revoke without confirmation, `set_label` (snooze validation, done hides the chat) and `clear_label` (only the `NOT_FOUND` path for an unknown chat), `cleanup_plan` (including rejection of criteria that narrow nothing) and `cleanup_apply`, and oversized-input rejection. Not covered: `status`, `list_chats`, `get_chat_info`, `set_watch_level`, `save_draft`, `mark_read`, the folder tools, archive/mute tools, `leave_chat`, `block_user`. `src/mcp/format.test.ts` covers `formatMessage`.
+`src/mcp/http.test.ts` binds port 0 on `127.0.0.1` and covers 401 without token, 403 foreign Host, 404 other path, 405 GET, a real `initialize` round trip, and the `tokenMatches` / `hostAllowed` helpers. `src/mcp/server.test.ts` uses an in-memory MCP client (`connect` and `makeToolDeps` in `src/testing/tool-deps.ts`) against `FakeGateway` and an in-memory store. It covers: the tool list and annotations, `status` while `connecting`, `get_pending`, `read_history`, `search_messages`, `send_message` (success, empty text, `AUTH_REQUIRED`, `FLOOD_WAIT`, plain `Error` as `INTERNAL`), `delete_chat` revoke without confirmation, `set_label` (snooze validation, done hides the chat) and `clear_label` (only the `NOT_FOUND` path for an unknown chat), `cleanup_plan` (including rejection of criteria that narrow nothing) and `cleanup_apply`, and oversized-input rejection. Not covered: `list_chats`, `get_chat_info`, `set_watch_level`, `save_draft`, `mark_read`, the folder tools, archive/mute tools, `leave_chat`, `block_user`. `src/mcp/format.test.ts` covers `formatMessage`.

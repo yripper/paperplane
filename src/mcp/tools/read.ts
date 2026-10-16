@@ -17,7 +17,7 @@ const watchLevel = z.enum(['full', 'normal', 'muted']);
 export function registerReadTools(server: McpServer, d: ToolDeps): void {
   server.registerTool(
     'status',
-    { description: 'Paperplane health: Telegram auth state, last live update, last sweep, store size.', inputSchema: {}, annotations: READ },
+    { description: 'Paperplane health: Telegram auth state (ok, connecting, or auth_required), last live update, last sweep, store size. Local reads work in every state; Telegram calls need ok.', inputSchema: {}, annotations: READ },
     () => run(() => d.status()),
   );
 

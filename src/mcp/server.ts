@@ -11,7 +11,7 @@ import { registerReadTools } from './tools/read.js';
 import { registerTrackingTools } from './tools/tracking.js';
 
 export interface StatusReport {
-  auth: 'ok' | 'auth_required';
+  auth: 'ok' | 'connecting' | 'auth_required';
   lastUpdateAt: string | null;
   lastSweepAt: string | null;
   lastSweep: SweepReport | null;
