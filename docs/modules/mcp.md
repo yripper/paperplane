@@ -44,7 +44,7 @@ The MCP server Claude talks to: Streamable HTTP on `127.0.0.1`, bearer-token aut
 | `delete_chat` | destructive | D | delete / clear / revoke (revoke needs `confirm_title`) |
 | `leave_chat` | destructive | D | Leave group or channel |
 | `block_user` | destructive | D | Block user |
-| `cleanup_plan` | destructive | R | Step 1: list matches, no side effects (needs >= 1 criterion) |
+| `cleanup_plan` | destructive | R | Step 1: list matches, no side effects (needs >= 1 criterion); at most 20 items, `matched` = total matched |
 | `cleanup_apply` | destructive | D | Step 2: execute plan minus exclusions; returns `{done, failed, skipped}` (`skipped` only in remove mode) |
 
 Errors come back as `isError: true` with text `CODE: message` (plus `(retry after Ns)`). Invalid arguments are rejected by the SDK's zod validation before any handler runs.
@@ -71,7 +71,7 @@ Errors come back as `isError: true` with text `CODE: message` (plus `(retry afte
 - Tool annotations (`readOnlyHint`, `destructiveHint`) are hints only. The real safety is that write tools are never allowlisted in the Claude permission settings.
 
 - Tool descriptions carry the "show the user and get approval first" instructions for write tools; they are the only place Claude is told that.
-- `cleanup_apply` reports `skipped` only for `remove` plans; an `archive` plan is a single call and a rate limit rejects it with `RATE_LIMITED` (the tool description says so, `src/mcp/tools/destructive.ts:73`).
+- `cleanup_apply` reports `skipped` only for `remove` plans; an `archive` plan is a single call and a rate limit rejects it with `RATE_LIMITED` (the tool description says so, `src/mcp/tools/destructive.ts:74`).
 - `cleanup_plan` is annotated read-only on purpose: it only stores a draft, so it is safe to allowlist. `cleanup_apply` is the destructive step.
 
 ## Testing

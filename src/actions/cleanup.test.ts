@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { AppError } from '../domain/errors.js';
 import { makeActionDeps } from '../testing/action-deps.js';
-import { applyCleanupPlan, createCleanupPlan } from './cleanup.js';
+import { applyCleanupPlan, CLEANUP_CALL_GAP_MS, createCleanupPlan, MAX_PLAN_ITEMS } from './cleanup.js';
 
 let t: ReturnType<typeof makeActionDeps>;
 
@@ -20,6 +20,19 @@ describe('createCleanupPlan', () => {
       { chatId: -1001, title: 'Old Channel', type: 'channel', action: 'leave' },
     ]);
     expect(t.gateway.calls).toHaveLength(0);
+  });
+
+  it('caps the plan at MAX_PLAN_ITEMS and reports the total matched', () => {
+    for (let id = 100; id < 125; id++) t.store.chats.ensure({ id, type: 'user', title: `Chat ${id}`, username: null }, 'normal', 0);
+    const plan = createCleanupPlan(t.deps, { inactiveDays: 30 }, 'remove');
+    expect(MAX_PLAN_ITEMS).toBe(20);
+    expect(plan.items).toHaveLength(20);
+    expect(plan.matched).toBe(27); // 25 new + Old Contact + Old Channel
+    expect(t.deps.plans.get(plan.id)?.items).toHaveLength(20);
+  });
+
+  it('reports matched equal to the item count when under the cap', () => {
+    expect(createCleanupPlan(t.deps, { inactiveDays: 30 }, 'remove').matched).toBe(2);
   });
 
   it('requires at least one criterion', () => {
@@ -65,6 +78,50 @@ describe('applyCleanupPlan', () => {
     const report = await applyCleanupPlan(limited.deps, plan.id);
     expect(report.done).toHaveLength(1);
     expect(report.skipped).toHaveLength(2);
+  });
+
+  it('pauses CLEANUP_CALL_GAP_MS between Telegram calls in remove mode, not before the first', async () => {
+    t.store.chats.ensure({ id: 11, type: 'user', title: 'Other Contact', username: null }, 'normal', 0);
+    const plan = createCleanupPlan(t.deps, { inactiveDays: 30 }, 'remove');
+    const order: string[] = [];
+    t.deps.sleep = async (ms: number) => {
+      order.push(`sleep:${ms}`);
+    };
+    const realDelete = t.gateway.deleteChat.bind(t.gateway);
+    const realLeave = t.gateway.leaveChat.bind(t.gateway);
+    t.gateway.deleteChat = async (chatId, mode) => {
+      order.push(`call:${chatId}`);
+      return realDelete(chatId, mode);
+    };
+    t.gateway.leaveChat = async (chatId) => {
+      order.push(`call:${chatId}`);
+      return realLeave(chatId);
+    };
+    await applyCleanupPlan(t.deps, plan.id);
+    expect(CLEANUP_CALL_GAP_MS).toBe(1000);
+    expect(order.map((e) => (e.startsWith('call:') ? 'call' : e))).toEqual(['call', 'sleep:1000', 'call', 'sleep:1000', 'call']);
+    expect(order.filter((e) => e.startsWith('call:')).sort()).toEqual(['call:-1001', 'call:10', 'call:11']);
+  });
+
+  it('does not pause for items that fail the re-check', async () => {
+    const plan = createCleanupPlan(t.deps, { inactiveDays: 30 }, 'remove');
+    t.store.chats.purge(10);
+    await applyCleanupPlan(t.deps, plan.id);
+    expect(t.sleeps).toEqual([]);
+  });
+
+  it('stops on FLOOD_WAIT and reports the remaining items as skipped', async () => {
+    for (const id of [1, 2, 3]) t.store.chats.ensure({ id, type: 'user', title: `Chat ${id}`, username: null }, 'normal', 0);
+    t.gateway.failOn.set('deleteChat', new AppError('FLOOD_WAIT', 'wait', 300));
+    t.gateway.failOn.set('leaveChat', new AppError('FLOOD_WAIT', 'wait', 300));
+    const plan = createCleanupPlan(t.deps, { inactiveDays: 30 }, 'remove');
+    const ids = plan.items.map((i) => i.chatId);
+    const report = await applyCleanupPlan(t.deps, plan.id);
+    expect(report.done).toEqual([]);
+    expect(report.failed).toEqual([{ chatId: ids[0], code: 'FLOOD_WAIT' }]);
+    expect(report.skipped).toEqual(ids.slice(1));
+    expect(ids).toHaveLength(5);
+    expect(t.gateway.callsTo('deleteChat').length + t.gateway.callsTo('leaveChat').length).toBe(1);
   });
 
   it('keeps going after a single failure', async () => {

@@ -39,7 +39,7 @@ export function registerDestructiveTools(server: McpServer, d: ToolDeps): void {
     'cleanup_plan',
     {
       description:
-        'Step 1 of bulk cleanup: list chats matching ALL given criteria, without changing anything. At least one criterion is required. Full-watch chats are never included. Show the numbered list to the user, then call cleanup_apply with their exclusions. Plans expire after 30 minutes.',
+        'Step 1 of bulk cleanup: list chats matching ALL given criteria, without changing anything. At least one criterion is required. Full-watch chats are never included. A plan holds at most 20 chats: `matched` is the total that matched, so when it exceeds `count`, apply this plan and then call cleanup_plan again for the rest. Show the numbered list to the user, then call cleanup_apply with their exclusions. Remove mode pauses about a second between chats. Plans expire after 30 minutes.',
       inputSchema: {
         inactive_days: z.number().int().min(1).max(3650).optional(),
         types: z.array(z.enum(['user', 'bot', 'group', 'supergroup', 'channel'])).min(1).max(5).optional(),
@@ -62,6 +62,7 @@ export function registerDestructiveTools(server: McpServer, d: ToolDeps): void {
           expiresAt: new Date(plan.expiresAt * 1000).toISOString(),
           mode: plan.mode,
           count: plan.items.length,
+          matched: plan.matched,
           items: plan.items.map((item, i) => ({ n: i + 1, ...item })),
         };
       }),

@@ -93,8 +93,9 @@ describe('MCP tools', () => {
   });
 
   it('cleanup_plan then cleanup_apply', async () => {
-    const plan = JSON.parse((await call('cleanup_plan', { inactive_days: 1 })).text) as { planId: string; count: number };
+    const plan = JSON.parse((await call('cleanup_plan', { inactive_days: 1 })).text) as { planId: string; count: number; matched: number };
     expect(plan.count).toBe(1);
+    expect(plan.matched).toBe(1);
     const report = JSON.parse((await call('cleanup_apply', { plan_id: plan.planId })).text);
     expect(report).toEqual({ done: [10], failed: [], skipped: [] });
   });

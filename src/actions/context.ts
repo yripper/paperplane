@@ -19,6 +19,8 @@ export interface ActionDeps {
   /** Unix seconds. */
   now: () => number;
   newId: () => string;
+  /// Injected so tests of paced loops (cleanup remove mode) run instantly.
+  sleep: (ms: number) => Promise<void>;
 }
 
 export function acquire(r: Acquire): void {

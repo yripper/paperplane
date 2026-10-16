@@ -159,6 +159,7 @@ async function runDaemon(secrets: SecretStore, log: Logger, paths: AppPaths, con
     },
     now: nowSec,
     newId: () => randomUUID(),
+    sleep: (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
   };
   const status = (): StatusReport => ({
     auth: state.auth,

@@ -11,6 +11,7 @@ export function makeActionDeps(over: { sendsPerMinute?: number; destructivePerMi
   store: TestStore;
   audit: AuditRepo;
   clock: { ms: number };
+  sleeps: number[];
 } {
   const store = makeStore();
   const gateway = new FakeGateway();
@@ -20,6 +21,7 @@ export function makeActionDeps(over: { sendsPerMinute?: number; destructivePerMi
   const nowSec = (): number => Math.floor(clock.ms / 1000);
   const audit = new AuditRepo(store.db);
   let ids = 0;
+  const sleeps: number[] = [];
   const deps: ActionDeps = {
     gateway,
     sink: makeSink(store, nowSec),
@@ -34,6 +36,10 @@ export function makeActionDeps(over: { sendsPerMinute?: number; destructivePerMi
     },
     now: nowSec,
     newId: () => `plan-${++ids}`,
+    // Records instead of waiting, so paced loops stay fast and assertable.
+    sleep: async (ms: number) => {
+      sleeps.push(ms);
+    },
   };
-  return { deps, gateway, store, audit, clock };
+  return { deps, gateway, store, audit, clock, sleeps };
 }

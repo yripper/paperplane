@@ -4,6 +4,18 @@ import type { CleanupItem, CleanupPlan } from '../store/cleanup-plans-repo.js';
 import { acquire, type ActionDeps, audited } from './context.js';
 
 const PLAN_TTL_SEC = 30 * 60;
+/// A plan is a list the user reviews line by line, and a remove run makes one
+/// Telegram call per item; bigger batches invite flood waits and skimmed
+/// approvals. `matched` tells Claude when to plan again for the rest.
+export const MAX_PLAN_ITEMS = 20;
+/// Pause between deletes/leaves in remove mode: bulk destructive calls in a
+/// tight loop are what trips Telegram's flood limits.
+export const CLEANUP_CALL_GAP_MS = 1000;
+
+export interface PlannedCleanup extends CleanupPlan {
+  /// Every chat that matched the criteria; items holds at most MAX_PLAN_ITEMS of them.
+  matched: number;
+}
 
 export interface CleanupReport {
   done: number[];
@@ -12,7 +24,7 @@ export interface CleanupReport {
 }
 
 /// Step one of two: a numbered list Claude shows me, with no side effects.
-export function createCleanupPlan(d: ActionDeps, criteria: CleanupCriteria, mode: CleanupMode): CleanupPlan {
+export function createCleanupPlan(d: ActionDeps, criteria: CleanupCriteria, mode: CleanupMode): PlannedCleanup {
   // `false`/empty values don't narrow anything, so they must not pass as a criterion.
   const narrows =
     criteria.inactiveDays !== undefined ||
@@ -24,7 +36,8 @@ export function createCleanupPlan(d: ActionDeps, criteria: CleanupCriteria, mode
     throw new AppError('VALIDATION', 'cleanup_plan needs at least one criterion');
   }
   const now = d.now();
-  const items: CleanupItem[] = selectForCleanup(d.chats.list({ limit: 100_000, offset: 0 }), criteria, now).map((c) => ({
+  const selected = selectForCleanup(d.chats.list({ limit: 100_000, offset: 0 }), criteria, now);
+  const items: CleanupItem[] = selected.slice(0, MAX_PLAN_ITEMS).map((c) => ({
     chatId: c.id,
     title: c.title,
     type: c.type,
@@ -32,7 +45,7 @@ export function createCleanupPlan(d: ActionDeps, criteria: CleanupCriteria, mode
   }));
   const plan: CleanupPlan = { id: d.newId(), createdAt: now, expiresAt: now + PLAN_TTL_SEC, mode, criteria, items, status: 'draft' };
   d.plans.insert(plan);
-  return plan;
+  return { ...plan, matched: selected.length };
 }
 
 type Verdict = { ok: true } | { ok: false; code: ErrorCode };
@@ -81,6 +94,7 @@ export async function applyCleanupPlan(d: ActionDeps, planId: string, exclude: n
 
   if (!d.plans.markApplied(planId)) throw new AppError('VALIDATION', 'cleanup plan already applied');
 
+  let calledTelegram = false;
   for (const [index, item] of items.entries()) {
     const verdict = recheck(d, item.chatId);
     if (!verdict.ok) {
@@ -91,6 +105,8 @@ export async function applyCleanupPlan(d: ActionDeps, planId: string, exclude: n
       report.skipped = items.slice(index).map((i) => i.chatId);
       break;
     }
+    if (calledTelegram) await d.sleep(CLEANUP_CALL_GAP_MS);
+    calledTelegram = true;
     try {
       await audited(d, `cleanup_${item.action}`, item.chatId, () =>
         item.action === 'delete' ? d.gateway.deleteChat(item.chatId, 'delete') : d.gateway.leaveChat(item.chatId),
