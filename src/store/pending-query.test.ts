@@ -59,9 +59,10 @@ describe('listPending', () => {
     chatWithIncoming(1, 'muted', [100]);
     chatWithIncoming(2, 'normal', [100]);
     chatWithIncoming(3, 'normal', [100]);
+    chatWithIncoming(4, 'normal', [100]); // positive control: a bug excluding everything must fail
     labels.set({ chatId: 2, label: 'done', snoozeUntil: null, note: null, updatedAt: 0 });
     labels.set({ chatId: 3, label: 'snoozed', snoozeUntil: 5000, note: 'after lunch', updatedAt: 0 });
-    expect(listPending(db, 1000, { limit: 10 })).toEqual([]);
+    expect(listPending(db, 1000, { limit: 10 }).map((p) => p.chat.id)).toEqual([4]);
   });
 
   it('brings back a chat whose snooze expired, with its label attached', () => {

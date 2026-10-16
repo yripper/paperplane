@@ -34,10 +34,11 @@ See Public surface; all functions are pure.
 ## Dependencies
 
 Type-only imports from `src/store/types.ts` (`ChatLabel`, `LabelKind`, `WatchLevel`) in `pending.ts`.
+Store imports of domain must stay pure functions; domain imports from store are type-only.
 
 ## Gotchas & invariants
 
-- Marked ids: channels/supergroups are `-100xxxxxxxxxx`, legacy groups small negatives, users positive. The store duplicates the bound as `CHANNEL_ID_BOUND` in `src/store/messages-repo.ts:4` (store must not depend on domain per its docs).
+- Marked ids: channels/supergroups are `-100xxxxxxxxxx`, legacy groups small negatives, users positive. The store duplicates the bound as `CHANNEL_ID_BOUND` in `src/store/messages-repo.ts:4` (the store may import pure, I/O-free domain functions such as `effectiveStatus`; the bound is duplicated only to keep that file self-contained).
 - pending = the last message isn't mine and the chat isn't muted; seen = pending, but my read position has passed it. Labels override automatic status; an expired snooze falls back to automatic; a new incoming message resets `done`/`waiting` (`labelSurvivesIncoming`, `src/domain/pending.ts:28`; applying the reset is the caller's job).
 
 ## Testing
