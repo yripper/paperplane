@@ -18,7 +18,7 @@ pnpm install && pnpm build
 node dist/cli.js login
 ```
 
-`login` asks for your `api_id`, `api_hash`, phone number, the code Telegram sends you and, if you use one, your 2FA password. The `api_hash` and the session keys go to the Keychain; nothing secret is written to disk in plain text. Use `pnpm link --global` if you want a `paperplane` command instead of `node dist/cli.js`.
+`login` asks for your `api_id`, `api_hash`, phone number, the code Telegram sends you and, if you use one, your 2FA password. The `api_id` and `api_hash` are saved only after Telegram accepts the login; on later logins pressing Enter keeps the stored ones. The `api_hash` and the session keys go to the Keychain; nothing secret is written to disk in plain text. Use `pnpm link --global` if you want a `paperplane` command instead of `node dist/cli.js`.
 
 ## Run it
 
@@ -29,7 +29,7 @@ pm2 startup        # run the command it prints, once, so the daemon starts at lo
 pm2 logs paperplane
 ```
 
-The log line `listening on http://127.0.0.1:7777/mcp (telegram auth: ok)` means it is up. If you are not logged in yet, the daemon still starts and reports `auth_required` instead of crash-looping (see Troubleshooting).
+The log line `listening on http://127.0.0.1:7777/mcp (telegram auth: connecting)` means the MCP server is up; `telegram connected` follows once Telegram answers. The server never waits for Telegram, so `status` and local reads work while it connects. If you are not logged in yet, the daemon still starts and reports `auth_required` instead of crash-looping (see Troubleshooting).
 
 ## Connect Claude
 
@@ -73,8 +73,8 @@ Notes on behavior:
 
 - `get_pending` lists chats waiting on my reply. A reply from my phone clears it within seconds, and reading a chat on my phone moves it to `seen`.
 - `delete_chat` with `revoke` (delete for everyone) needs `confirm_title` to match the chat title exactly. It refuses channels and supergroups; `leave_chat` refuses private chats.
-- Cleanup is two steps. `cleanup_plan` needs at least one narrowing criterion and lists matches without changing anything. `cleanup_apply` re-checks every chat before acting, so a chat that disappeared comes back as `NOT_FOUND` and one promoted to full watch since planning as `FORBIDDEN`. Plans expire after 30 minutes and apply once.
-- The sweep that backstops live updates pages large gaps (up to 10 pages per chat) and skips purging chats that were touched while it ran.
+- Cleanup is two steps. `cleanup_plan` needs at least one narrowing criterion and lists matches without changing anything. A plan holds at most 20 chats and reports how many matched in total, so bigger cleanups run as several plans. In remove mode `cleanup_apply` waits about a second between chats. `cleanup_apply` re-checks every chat before acting, so a chat that disappeared comes back as `NOT_FOUND` and one promoted to full watch since planning as `FORBIDDEN`. Plans expire after 30 minutes and apply once.
+- The sweep that backstops live updates pages large gaps (up to 10 pages per chat) and skips purging chats that were touched while it ran. If a pass sees no dialogs at all, or would remove more than max(5, 25%) of the stored chats, it skips the purge (a glitch is likelier than real deletions) and flags it in `status`.
 - Rate limits reject instead of sleeping: 20 sends per minute, 1 s between sends to the same chat, 30 destructive actions per minute. Over the limit you get `RATE_LIMITED` with a retry time.
 
 ## Data and privacy
@@ -87,7 +87,8 @@ Notes on behavior:
 
 ## Troubleshooting
 
-- **`status` shows `auth_required`:** there is no valid session (never logged in, logged out, or revoked from Telegram's Devices list). The daemon stays up, local reads and `status` still answer, and Telegram tools return `AUTH_REQUIRED`. Run `paperplane login`, then `pm2 restart paperplane`; a running daemon does not pick up a new session.
+- **`status` shows `auth_required`:** there is no valid session (never logged in, logged out, or revoked from Telegram's Devices list). The daemon stays up, local reads and `status` still answer, and Telegram tools return `AUTH_REQUIRED`. Run `pm2 stop paperplane && paperplane login && pm2 start paperplane`: `login` takes the same lock as the daemon, so it can't run while the daemon is up.
+- **`status` stays `connecting`:** Telegram isn't reachable yet (offline, DNS, Telegram trouble). Local reads still work and Telegram tools return `AUTH_REQUIRED: Telegram not connected yet`. `pm2 logs paperplane` shows `telegram connect failed ... retrying in Ns`; the daemon retries on its own, backing off up to a minute.
 - **"already running":** `login` and `logout` share a lock with the daemon, because two processes on one session break it. Run `pm2 stop paperplane` first, then start it again afterwards.
 - **Port in use:** set `port` in `~/.paperplane/config.json` (1024-65535, default 7777), then `pm2 restart paperplane` and re-run `paperplane token` for the new URL.
 

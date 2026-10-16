@@ -70,6 +70,7 @@ The only module that imports mtcute. Owns the MTProto user client (login, live u
 - `onHistoryRead` fires for forum topics and comment threads too (`isDiscussion`, `isMonoForum`): `chatId` is the whole supergroup, `maxReadId` is the thread pointer and `unreadCount` is 0. The session ignores those, or they would zero the chat's unread count.
 - Login/logout clients use `disableUpdates: true` and `catchUp: false` (`client.ts:16`): catching up would advance pts in `mtcute.db` and the daemon would miss those updates.
 - `SLOWMODE_WAIT_%d` and `FLOOD_PREMIUM_WAIT_%d` also map to `FLOOD_WAIT` with seconds.
+- `AUTH_REQUIRED` messages (`errors.ts:25`, `session.ts:55`) carry the full re-login command, `pm2 stop paperplane && paperplane login && pm2 start paperplane`: `login` takes the daemon's lock, so "login, then restart" would fail.
 - Mute uses INT32_MAX as "forever": a convention, still to be verified in the live smoke test.
 - Update handlers never throw into mtcute: one bad update must not stop the stream.
 - Revocation surfaces as `AppError('AUTH_REQUIRED')` (the sweep relies on this); non-`AppError` failures become `INTERNAL`.

@@ -50,9 +50,9 @@ export function createSession(o: ClientOptions, sink: UpdateSink, hooks: Session
   return {
     gateway: new MtcuteGateway(tg),
     async connect() {
-      // The daemon never prompts: if mtcute asks for a phone, we're not logged in.
+      // The daemon never prompts: if mtcute asks for a phone, there is no session.
       const refuse = (): never => {
-        throw new AppError('AUTH_REQUIRED', 'not logged in: run `paperplane login`');
+        throw new AppError('AUTH_REQUIRED', 'not logged in: run `pm2 stop paperplane && paperplane login && pm2 start paperplane`');
       };
       try {
         await tg.start({ phone: refuse, code: refuse, password: refuse });
@@ -87,7 +87,7 @@ export async function logout(o: ClientOptions): Promise<void> {
     const err = mapTelegramError(e);
     if (err.code !== 'AUTH_REQUIRED') throw err;
     // Already revoked server-side: logOut fails before mtcute clears anything,
-    // so wipe the stale auth key (Keychain) and kv state ourselves.
+    // so wipe the stale auth key (Keychain) and kv state here.
     await tg.storage.clear(true);
   } finally {
     await tg.destroy();

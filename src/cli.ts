@@ -4,9 +4,10 @@ import { createInterface } from 'node:readline/promises';
 import { Writable } from 'node:stream';
 import { loadConfig, saveConfig } from './config/config.js';
 import { ensureHome, resolvePaths } from './config/paths.js';
-import { AppError, describeError } from './domain/errors.js';
+import { describeError } from './domain/errors.js';
 import { startDaemon } from './daemon/daemon.js';
 import { acquireLock } from './daemon/lock.js';
+import { apiHashPrompt, apiIdPrompt, pickApiHash, pickApiId } from './daemon/login-input.js';
 import { connectionSnippets } from './daemon/snippets.js';
 import { ensureBearerToken } from './daemon/token.js';
 import { Keychain, SECRET_ACCOUNTS } from './secrets/keychain.js';
@@ -39,12 +40,11 @@ async function runLogin(): Promise<void> {
   try {
     const keychain = new Keychain();
     const config = loadConfig(paths.config);
-    const apiId = config.apiId ?? Number(await ask('api_id (from https://my.telegram.org): '));
-    if (!Number.isInteger(apiId) || apiId <= 0) throw new AppError('VALIDATION', 'api_id must be a positive integer');
-    const apiHash = (await keychain.get(SECRET_ACCOUNTS.apiHash)) ?? (await ask('api_hash: ', true));
-    if (apiHash.trim() === '') throw new AppError('VALIDATION', 'api_hash must not be empty');
-    await keychain.set(SECRET_ACCOUNTS.apiHash, apiHash);
-    saveConfig(paths.config, { ...config, apiId });
+    // Always re-prompt, so a wrong apiId/api_hash from an earlier attempt can be
+    // fixed; Enter keeps what's stored.
+    const apiId = pickApiId(await ask(apiIdPrompt(config.apiId)), config.apiId);
+    const storedHash = await keychain.get(SECRET_ACCOUNTS.apiHash);
+    const apiHash = pickApiHash(await ask(apiHashPrompt(!!storedHash), true), storedHash);
 
     const name = await login(
       { apiId, apiHash, mtcuteDbPath: paths.mtcuteDb, authKeys: new KeychainAuthKeys(keychain), log: () => {} },
@@ -54,8 +54,14 @@ async function runLogin(): Promise<void> {
         password: () => ask('2FA password: ', true),
       },
     );
+    // Saved only after Telegram accepted them: a failed login must not leave
+    // bad credentials behind for the daemon to retry with.
+    await keychain.set(SECRET_ACCOUNTS.apiHash, apiHash);
+    saveConfig(paths.config, { ...config, apiId });
     await ensureBearerToken(keychain);
-    stdout.write(`Logged in as ${name}.\nNext: pnpm build && pm2 start ecosystem.config.cjs, then run \`paperplane token\`.\n`);
+    stdout.write(
+      `Logged in as ${name}.\nNext: \`pm2 start paperplane\` (first time: \`pnpm build && pm2 start ecosystem.config.cjs\`), then run \`paperplane token\`.\n`,
+    );
   } finally {
     lock.release();
   }

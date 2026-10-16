@@ -22,7 +22,7 @@ export function mapTelegramError(e: unknown): AppError {
     return new AppError('FLOOD_WAIT', `Telegram asked to wait ${e.seconds}s`, e.seconds);
   }
   if (tl.RpcError.is(e)) {
-    if (AUTH_ERRORS.has(e.text)) return new AppError('AUTH_REQUIRED', 'Telegram session is not valid: run `paperplane login`');
+    if (AUTH_ERRORS.has(e.text)) return new AppError('AUTH_REQUIRED', 'Telegram session is not valid: run `pm2 stop paperplane && paperplane login && pm2 start paperplane`');
     if (NOT_FOUND_ERRORS.test(e.text)) return new AppError('NOT_FOUND', `Telegram: ${e.text}`);
     if (e.code === 403) return new AppError('FORBIDDEN', `Telegram refused: ${e.text}`);
     return new AppError('INTERNAL', `Telegram error ${e.code} ${e.text}`);
