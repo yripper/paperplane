@@ -24,7 +24,7 @@ Side effects on Telegram on behalf of MCP tools: messaging, organizing (folders/
 All actions take `d: ActionDeps` first and a single input object.
 
 - `ActionDeps`: `src/actions/context.ts:11` (gateway, sink, repos, `limits: { sends, chatGap, destructive }`, `now` in unix seconds, `newId`, `sleep(ms)` at `:23`: real `setTimeout` in the daemon, a recording no-op in `makeActionDeps`).
-- `acquire(r: Acquire): void` `:24` (rejection becomes `RATE_LIMITED` with `retryAfterSec`), `audited(d, action, chatId, fn)` `:28`, `requireChat(d, chatId): ChatRow` `:39` (`NOT_FOUND` if unknown).
+- `acquire(r: Acquire): void` `:26` (rejection becomes `RATE_LIMITED` with `retryAfterSec`), `audited(d, action, chatId, fn)` `:30`, `requireChat(d, chatId): ChatRow` `:41` (`NOT_FOUND` if unknown).
 - messaging (`src/actions/messaging.ts`): `sendMessage` `:4`, `saveDraft` `:21`, `markRead` `:26`.
 - organize (`src/actions/organize.ts`): `listFolders` `:4`, `createFolder` `:8`, `editFolder` `:12`, `deleteFolder` `:20`, `archiveChats` `:24`, `unarchiveChats` `:29`, `setChatMuted` `:34`.
 - destructive (`src/actions/destructive.ts`): `deleteChat` `:7`, `leaveChat` `:27`, `blockUser` `:37`.
