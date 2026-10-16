@@ -1,4 +1,5 @@
 import { ChatsRepo } from '../store/chats-repo.js';
+import { CursorsRepo } from '../store/cursors-repo.js';
 import { type Db, openDb } from '../store/db.js';
 import { LabelsRepo } from '../store/labels-repo.js';
 import { MessagesRepo } from '../store/messages-repo.js';
@@ -52,11 +53,12 @@ export interface TestStore {
   chats: ChatsRepo;
   messages: MessagesRepo;
   labels: LabelsRepo;
+  cursors: CursorsRepo;
 }
 
 export function makeStore(): TestStore {
   const db = openDb(':memory:');
-  return { db, chats: new ChatsRepo(db), messages: new MessagesRepo(db), labels: new LabelsRepo(db) };
+  return { db, chats: new ChatsRepo(db), messages: new MessagesRepo(db), labels: new LabelsRepo(db), cursors: new CursorsRepo(db) };
 }
 
 export function makeSink(store: TestStore, now: () => number = () => 1000): UpdateSink {

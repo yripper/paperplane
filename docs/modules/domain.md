@@ -2,7 +2,7 @@
 
 > **Living document.** Read this before modifying the module. Update it in the same change whenever the module's behavior, public surface, files, or dependencies change.
 
-**Source:** `src/domain/` · **Last verified:** 2026-10-16 (`errors.ts`, `peer-ids.ts`, `pending.ts` and `rate-limiter.ts` implemented; rest planned)
+**Source:** `src/domain/` · **Last verified:** 2026-10-16 (`errors.ts` (incl. `describeError`), `peer-ids.ts`, `pending.ts` and `rate-limiter.ts` implemented; rest planned)
 
 ## Purpose
 
@@ -12,7 +12,7 @@ Pure logic with no I/O: pending status, label precedence/reset rules, cleanup se
 
 | File | Purpose |
 |---|---|
-| `errors.ts` | `AppError` + `ErrorCode`: the one error type crossing module boundaries (`src/domain/errors.ts:13`) |
+| `errors.ts` | `AppError` + `ErrorCode`: the one error type crossing module boundaries (`src/domain/errors.ts:13`); `describeError` (`:26`) formats any thrown value for logs |
 | `peer-ids.ts` | `isChannelId`: marked-id classification (`src/domain/peer-ids.ts:3`) |
 | `pending.ts` | Auto status (pending/seen/clear) + label precedence (`src/domain/pending.ts:15`, `:20`, `:28`) |
 | `cleanup-criteria.ts` | Selects chats for `cleanup_plan` |
@@ -20,6 +20,7 @@ Pure logic with no I/O: pending status, label precedence/reset rules, cleanup se
 
 ## Public surface
 
+- `describeError(e: unknown): string`: `src/domain/errors.ts:26`. Log-safe `CODE: message` / `Name: message`; non-Error values become `unknown error`.
 - `isChannelId(id: number): boolean`: `src/domain/peer-ids.ts:3`. True for ids below -1_000_000_000_000 (mtcute marked channel/supergroup ids).
 
 - `autoStatus(c: PendingInput): AutoStatus`: `src/domain/pending.ts:15`. `clear` if muted, empty (`topMsgId === 0`) or last message is mine; else `seen` when `readInboxMaxId >= topMsgId`, otherwise `pending`.

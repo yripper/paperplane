@@ -17,6 +17,7 @@ Paperplane's own SQLite database at `~/.paperplane/paperplane.db` (better-sqlite
 | `types.ts` | Row types and string unions |
 | `chats-repo.ts` | `ChatsRepo`, `rowToChat`, `ChatSeed`, `DialogSnapshot`, `ChatFilter` |
 | `messages-repo.ts` | `MessagesRepo` (upsert, soft delete, history, FTS search) |
+| `cursors-repo.ts` | `CursorsRepo` + `SyncCursor`: per-chat backfill progress |
 | `labels-repo.ts` | `LabelsRepo` (upsert/get/clear), `rowToLabel` |
 | `pending-query.ts` | `listPending`: SQL + ordering behind `get_pending` |
 | `db.test.ts`, `chats-repo.test.ts`, `messages-repo.test.ts`, `pending-query.test.ts` | Schema/migrations/FTS sync; repository behavior; pending ordering |
@@ -30,6 +31,7 @@ Paperplane's own SQLite database at `~/.paperplane/paperplane.db` (better-sqlite
 - Row types `ChatType`, `WatchLevel`, `LabelKind`, `ChatRow`, `MessageRow`, `ChatLabel`: `src/store/types.ts:1-43`. Row types use camelCase and booleans; SQL columns are snake_case with 0/1 integers, so repositories must map.
 - `ChatsRepo`: `src/store/chats-repo.ts:54`. Helpers `rowToChat` `:33` (exported for pending-query), `ChatSeed` `:4`, `DialogSnapshot` `:11`, `ChatFilter` `:23`.
 - `MessagesRepo`: `src/store/messages-repo.ts:29`.
+- `CursorsRepo`: `src/store/cursors-repo.ts:9`; `SyncCursor` `:3`.
 - `LabelsRepo`: `src/store/labels-repo.ts:14`; `rowToLabel` `:4`.
 - `listPending(db, nowSec, { limit }): PendingItem[]`: `src/store/pending-query.ts:28`; `PendingItem` `:7`.
 
@@ -39,6 +41,7 @@ Paperplane's own SQLite database at `~/.paperplane/paperplane.db` (better-sqlite
 
 - `ChatsRepo`: `ensure` `:59` (insert once; later only title/username/type), `get` `:69`, `list` `:74`, `allIds` `:99`, `bumpTop` `:104`, `setTop` `:114`, `incrementUnread` `:120`, `setReadInbox` `:124`, `setReadOutbox` `:133`, `applySnapshot` `:142`, `setWatchLevel` `:163`, `setMuted` `:167`, `setArchived` `:171`, `purge` `:177` (also deletes messages, chat_labels, sync_cursors), `count` `:186`.
 - `MessagesRepo`: `upsert` `:32`, `softDelete` `:44`, `softDeleteNonChannel` `:51` (returns affected chat ids), `softDeleteAll` `:64`, `history` `:68`, `latestAlive` `:79`, `oldestStored` `:86` (includes deleted rows), `search` `:91`, `count` `:102`.
+- `CursorsRepo`: `get` `:12` (null when no cursor), `set` `:20` (upsert on `chat_id`). Holds `oldestSyncedMsgId` and `backfillComplete` for backfill; `ChatsRepo.purge` deletes it.
 - `LabelsRepo`: `set` `:17` (upsert via ON CONFLICT), `get` `:27`, `clear` `:32`.
 - `listPending`: SQL at `pending-query.ts:16`; keeps only rows whose `effectiveStatus` is `pending`/`seen`, sorts `full` watch level first, then by `waitingSinceSec` ascending (longest wait first), then applies `limit`. `waiting_since` = oldest alive incoming message after my last alive outgoing message, falling back to `top_msg_date` when no history is stored.
 

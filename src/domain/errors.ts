@@ -20,3 +20,11 @@ export class AppError extends Error {
     this.name = 'AppError';
   }
 }
+
+/// For logs: error class and message only. Telegram/mtcute errors don't carry
+/// message content, and AppError messages are written to be log-safe.
+export function describeError(e: unknown): string {
+  if (e instanceof AppError) return `${e.code}: ${e.message}`;
+  if (e instanceof Error) return `${e.name}: ${e.message}`;
+  return 'unknown error';
+}

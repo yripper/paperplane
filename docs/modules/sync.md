@@ -2,13 +2,13 @@
 
 > **Living document.** Read this before modifying the module. Update it in the same change whenever the module's behavior, public surface, files, or dependencies change.
 
-**Source:** `src/sync/` · **Last verified:** 2026-10-16 (partially implemented: `update-sink.ts` exists; `sweep.ts` and `backfill.ts` are planned)
+**Source:** `src/sync/` · **Last verified:** 2026-10-16 (`update-sink.ts`, `sweep.ts` and `backfill.ts` implemented)
 
 ## Purpose
 
 Keeps the local store mirroring Telegram: applies live updates (new/edit/delete/read), runs the periodic safety sweep, and does history backfill. Telegram is the source of truth, and the store is only written from what Telegram reports.
 
-## Structure (`update-sink.ts` implemented, rest planned)
+## Structure
 
 | File | Purpose |
 |---|---|
@@ -21,6 +21,8 @@ Keeps the local store mirroring Telegram: applies live updates (new/edit/delete/
 - `SinkDeps` (`src/sync/update-sink.ts:10`): `db`, the three repos, `watchDefaults` per `ChatType` and `now` (unix seconds).
 - `toMessageRow(m, sentViaPaperplane)` (`update-sink.ts:20`): `TgMessage` → `MessageRow`.
 - `UpdateSink` (`update-sink.ts:38`): the only writer of synced state; constructed as `new UpdateSink(deps)`.
+- `runSweep(d: SweepDeps): Promise<SweepReport>` (`sweep.ts:44`), `toSnapshot(dialog)` (`sweep.ts:27`), `SweepDeps` `:6`, `SweepReport` `:14`.
+- `backfillPage(d, chatId, pageSize?)` (`backfill.ts:22`), `readHistory(d, chatId, { limit, beforeId? })` (`backfill.ts:40`), `backfillFullChats(d)` (`backfill.ts:59`), `BackfillDeps` `:9`.
 
 ## Key methods
 
@@ -29,6 +31,11 @@ Keeps the local store mirroring Telegram: applies live updates (new/edit/delete/
 - `onEdit(m)` (`update-sink.ts:64`): upserts the edited message; never touches unread.
 - `onDelete(e)` (`update-sink.ts:71`): soft-deletes by channel id, or across non-channel chats when `channelId` is null, and recomputes the top if it was deleted.
 - `onRead(e)` (`update-sink.ts:90`): updates read cursors/unread; ignores chats not yet known.
+
+- `runSweep` (`sweep.ts:44`): iterates dialogs; per dialog `syncDialog` (`sweep.ts:76`) ensures the chat, fetches at most `DELTA_LIMIT` (100) messages after the stored top (never for `muted` chats or first sight, which store only the top), then applies the Telegram snapshot (monotonic top/read positions). One dialog failing is logged and counted, not fatal. Chats absent from the pass are purged only when the whole iteration completed (`sweep.ts:62`); `iterationError` carries `AUTH_REQUIRED` for a revoked session.
+- `backfillPage` (`backfill.ts:22`): fetches one page older than the cursor (or oldest stored message), stores it through the sink, and saves the cursor; a short page marks `backfillComplete`.
+- `readHistory` (`backfill.ts:40`): `NOT_FOUND` for unknown chats; muted chats read straight from Telegram without storing; otherwise serves from the store and backfills up to 5 pages (`MAX_PAGES_PER_READ`) when short.
+- `backfillFullChats` (`backfill.ts:59`): one page for each `full` chat whose backfill isn't complete; per-chat failures are logged.
 
 ## Dependencies
 
@@ -46,6 +53,9 @@ Keeps the local store mirroring Telegram: applies live updates (new/edit/delete/
 - Deleting the top message recomputes the top from the latest alive message (`update-sink.ts:85`), falling back to 0 when none is left.
 - Reads for chats the store has never seen are ignored; the next sweep creates them with full state.
 
+- If more than 100 messages were missed in a chat between sweeps, the delta leaves a gap; older messages fill in on demand via `readHistory`.
+- The sweep never writes unread increments; it applies Telegram's own counts via `applySnapshot`.
+
 ## Testing
 
-- `pnpm test src/sync`: `update-sink.test.ts` runs against an in-memory DB via `makeStore()`/`makeSink()` from `src/testing/fixtures.ts` (synthetic data only).
+- `pnpm test src/sync`: `update-sink.test.ts`, `sweep.test.ts` and `backfill.test.ts` run against an in-memory DB via `makeStore()`/`makeSink()` from `src/testing/fixtures.ts` (synthetic data only).
