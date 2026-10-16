@@ -2,32 +2,54 @@
 
 > **Living document.** Read this before modifying the module. Update it in the same change whenever the module's behavior, public surface, files, or dependencies change.
 
-**Source:** `src/telegram/` · **Last verified:** 2026-10-16 (module not yet implemented: planned design, no code)
+**Source:** `src/telegram/` · **Last verified:** 2026-10-16 (paged `deleteChat`)
 
 ## Purpose
 
 The only module that imports mtcute. Owns the MTProto user client (login, live updates, catch-up), a Keychain-backed auth-key store, and the `TelegramGateway` adapter that converts mtcute types into plain Paperplane types and mtcute errors into `AppError`s. If this breaks, nothing syncs and no action reaches Telegram.
 
-## Structure (planned)
+## Structure
 
 | File | Purpose |
 |---|---|
 | `client.ts` | Builds the `TelegramClient` with composite storage and log redirection |
 | `keychain-auth-keys.ts` | mtcute auth-key repository backed by macOS Keychain |
 | `adapt.ts` | mtcute `Message`/`Dialog`/`Peer` → plain `Tg*` types |
-| `gateway.ts` | `TelegramGateway` interface + mtcute implementation, error mapping |
+| `types.ts` | Plain `Tg*` types and the `TelegramGateway` interface (no mtcute import) |
+| `gateway.ts` | mtcute implementation of `TelegramGateway`, wraps every call with error mapping |
+| `errors.ts` | `mtcute`/RPC errors → `AppError` |
+| `session.ts` | Daemon session (update wiring, connect), plus `login` / `logout` |
 
 ## Public surface
 
-_TBD — fill on first substantive change._
+- `TelegramGateway` (`src/telegram/types.ts:56`): the module's contract. Everything outside `src/telegram` uses it, never mtcute. `getHistory` returns newest first. Test double: `FakeGateway` (`src/testing/fake-gateway.ts`).
+- Plain types (`types.ts:3-51`): `TgPeer`, `TgMessage`, `TgDialog`, `TgFolder`, `TgDeleteEvent`, `TgReadEvent`, `DeleteMode`.
+- `createSession(o, sink, hooks)` (`session.ts:29`): the daemon's single connection; returns `{ gateway, connect, destroy }`. `login` (`session.ts:70`) and `logout` (`session.ts:82`) are the CLI flows; they build the client with updates disabled and rethrow mapped errors. `connect()` returns `'auth_required'` instead of prompting.
+- `MtcuteGateway` (`gateway.ts:36`): `TelegramGateway` over a `TelegramClient`. `createTelegramClient` (`client.ts:16`) builds that client.
+- `mapTelegramError` (`errors.ts:16`): `AppError` passes through, everything else is mapped or wrapped as `INTERNAL`.
+- Adapters (`adapt.ts:9`, `:15`, `:20`, `:34`): `mapChatType`, `adaptPeer`, `adaptMessage`, `adaptDialog`.
+- `KeychainAuthKeys` (`src/telegram/keychain-auth-keys.ts:13`): `IAuthKeysRepository` implementation, constructed as `new KeychainAuthKeys(secrets: SecretStore)`.
 
 ## Key methods
 
-_TBD — fill on first substantive change._
+- `set(dc, key)` (`keychain-auth-keys.ts:19`): writes the key as base64 under Keychain account `authkey:<dc>` immediately; `null` deletes it.
+- `get(dc)` (`keychain-auth-keys.ts:25`): reads Keychain once per DC, then serves from an in-process cache.
+- `setTemp` / `getTemp` (`keychain-auth-keys.ts:33`, `:38`): temp (PFS) keys, memory only; `getTemp` returns `null` once `expires <= now`.
+- `deleteByDc(dc)` (`keychain-auth-keys.ts:43`): removes the permanent key and that DC's temp keys.
+- `deleteAll()` (`keychain-auth-keys.ts:48`): clears DCs 1-5 (`DC_IDS`, `:6`) and all temp keys.
+- `iterDialogs` (`gateway.ts:47`): passes `archived: 'keep'`; the sweep depends on archived chats appearing.
+- `getHistory` (`gateway.ts:56`): `beforeId` becomes an exclusive offset, `afterId` an exclusive `minId`.
+- `createFolder` / `editFolder` (`gateway.ts:92`, `:106`): reject an empty include list with `VALIDATION` (Telegram would answer `FILTER_INCLUDE_EMPTY`).
+- `setMuted` (`gateway.ts:138`): raw `account.updateNotifySettings` with `muteUntil` INT32_MAX (or 0).
+- `deleteChat` (`gateway.ts:154`): raw `messages.deleteHistory` (`maxId: 0`, `justClear` for `clear`, `revoke` for `revoke`) repeated while `affectedHistory.offset > 0`, capped at `DELETE_HISTORY_MAX_CALLS` = 200 (`:11`, then `INTERNAL`). After each call it hands mtcute a dummy pts update via `handleClientUpdate` (`dummyUpdate`, `:15`), with the channel id for channel peers, exactly as mtcute's own `deleteHistory` does.
+- `createSession` handlers (`session.ts:31-48`): each update runs in a try/catch and reports through `hooks.onUpdateError`; thread read receipts are dropped (`session.ts:42-47`).
+- `logout` (`session.ts:82`): if `logOut` fails with `AUTH_REQUIRED` (already revoked), it calls `tg.storage.clear(true)` to drop the stale Keychain key and returns normally.
 
 ## Dependencies
 
-_TBD — fill on first substantive change._
+- `@mtcute/node` (runtime: `TelegramClient`, `SqliteStorage`, `tl`, `getMarkedPeerId`, error classes) and `@mtcute/core` types, only inside this module.
+- `AppError` from `src/domain/errors.ts`; `ChatType` from `src/store/types.ts` (type only); `UpdateSink` from `src/sync/update-sink.ts` (type only, used by `session.ts`).
+- `SecretStore` from `src/secrets/keychain.ts` (`KeychainAuthKeys` takes it by injection).
 
 ## Gotchas & invariants
 
@@ -37,10 +59,23 @@ _TBD — fill on first substantive change._
 - Peer ids are marked plain numbers (channels `-100…`). Resolving a numeric id only works if the peer is in mtcute's cache, so `iterDialogs` runs at startup to seed it, otherwise you get `MtPeerNotFoundError`.
 - Composite storage: mtcute's storage managers only read `driver`, `kv`, `authKeys`, `peers` and `refMessages` off the provider, so `authKeys` can be swapped for a Keychain repo while the rest stays in `~/.paperplane/mtcute.db`. `IAuthKeysRepository.set` must persist immediately, with no batching.
 - Folder titles are `tl.TypeTextWithEntities` (`{ _: 'textWithEntities', text, entities: [] }`), not strings. `includePeers`, `excludePeers` and `pinnedPeers` are all required on a `RawDialogFilter`.
+- mtcute's `deleteHistory` (`@mtcute/core` `highlevel/methods/chats/delete-history.js:4-19`) makes one `messages.deleteHistory` call and ignores `affectedHistory.offset`, so a long chat would be only partly deleted. The gateway replicates it in a loop; `createDummyUpdate` (`highlevel/updates/utils.js:60-69`) and `isInputPeerChannel` (`highlevel/utils/peer-utils.js:113`) aren't exported from `@mtcute/node`, so their few lines are inlined.
 - There's no high-level mute method; use the raw `account.updateNotifySettings` call with `inputNotifyPeer` and `inputPeerNotifySettings.muteUntil`.
 - mtcute retries FLOOD_WAIT up to `maxWait` 10s / 5 retries by default. Above that it throws `tl.RpcError` (`code 420`, wait time in `.seconds`), which the gateway maps to `AppError('FLOOD_WAIT')`.
+- Temp (PFS) auth keys are memory-only and never reach Keychain; mtcute re-negotiates them after a restart. `deleteAll` only clears DCs 1-5, since Keychain items can't be enumerated cheaply. Keychain values must match `[A-Za-z0-9+/=_.:-]`; standard base64 does.
+- `types.ts` must stay free of mtcute imports; it only depends on `ChatType` from the store types.
 - Never log message content. mtcute's log handler is redirected and must drop the `args`.
+
+- `iterDialogs` needs `archived: 'keep'` (mtcute defaults to `'exclude'`), or archived chats never sync.
+- `onHistoryRead` fires for forum topics and comment threads too (`isDiscussion`, `isMonoForum`): `chatId` is the whole supergroup, `maxReadId` is the thread pointer and `unreadCount` is 0. The session ignores those, or they would zero the chat's unread count.
+- Login/logout clients use `disableUpdates: true` and `catchUp: false` (`client.ts:16`): catching up would advance pts in `mtcute.db` and the daemon would miss those updates.
+- `SLOWMODE_WAIT_%d` and `FLOOD_PREMIUM_WAIT_%d` also map to `FLOOD_WAIT` with seconds.
+- `AUTH_REQUIRED` messages (`errors.ts:25`, `session.ts:55`) carry the full re-login command, `pm2 stop paperplane && paperplane login && pm2 start paperplane`: `login` takes the daemon's lock, so "login, then restart" would fail.
+- Mute uses INT32_MAX as "forever": a convention, still to be verified in the live smoke test.
+- Update handlers never throw into mtcute: one bad update must not stop the stream.
+- Revocation surfaces as `AppError('AUTH_REQUIRED')` (the sweep relies on this); non-`AppError` failures become `INTERNAL`.
+- `client.ts`, `gateway.ts` and `session.ts` are covered by typecheck only; they need a live smoke test (no network in unit tests).
 
 ## Testing
 
-_TBD — fill on first substantive change._
+- `pnpm test src/telegram`: `KeychainAuthKeys` tests run against `MemorySecretStore`; never touch the real Keychain. `errors.test.ts` and `adapt.test.ts` cover error mapping and `mapChatType`. `gateway.test.ts` drives `deleteChat` against a minimal fake client (`resolvePeer`, `call`, `handleClientUpdate`): looping on `offset`, mode flags, the dummy pts updates (incl. channel id), the 200-call cap and error mapping.
