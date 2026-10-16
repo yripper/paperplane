@@ -12,3 +12,4 @@ Living docs, one per module. **Read the relevant doc before modifying a module; 
 | [mcp.md](mcp.md) | `src/mcp/` | The MCP server Claude talks to: Streamable HTTP on `127.0.0.1`, bearer-token auth and the tool definitions. |
 | [secrets.md](secrets.md) | `src/secrets/` | macOS Keychain access through the built-in `security` CLI: api_hash, bearer token and the Telegram auth keys. |
 | [config.md](config.md) | `src/config/` | `~/.paperplane` path layout and zod-validated config. |
+| [daemon.md](daemon.md) | `src/daemon/`, `src/cli.ts` | Process wiring, single-instance lock, sync loop and the `paperplane` CLI. |
