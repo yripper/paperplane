@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { FakeGateway } from '../testing/fake-gateway.js';
 import { makeSink, makeStore, peer, type TestStore, tgDialog, tgMessage } from '../testing/fixtures.js';
+import { AppError } from '../domain/errors.js';
 import { runSweep, type SweepDeps } from './sweep.js';
 
 let store: TestStore;
@@ -86,5 +87,51 @@ describe('runSweep', () => {
     expect(report.iterationError).toBe('INTERNAL');
     expect(report.purged).toBe(0);
     expect(store.chats.get(99)).not.toBeNull();
+  });
+
+  it('does not purge a chat touched by a live update during the sweep', async () => {
+    store.chats.ensure({ id: 99, type: 'user', title: 'Stale Missing', username: null }, 'normal', 0);
+    const live = peer({ id: 55, title: 'Live Newcomer' });
+    gateway.dialogs = [tgDialog()];
+    // Clock is 1000 for both the sweep and the sink, i.e. at/after sweep start.
+    gateway.afterDialog = () => deps.sink.onMessage(tgMessage({ id: 1, chat: live }), { live: true });
+    const report = await runSweep(deps);
+    expect(report.complete).toBe(true);
+    expect(store.chats.get(55)).not.toBeNull();
+    expect(store.chats.get(99)).toBeNull();
+    expect(report.purged).toBe(1);
+  });
+
+  it('reports AUTH_REQUIRED from dialog iteration without purging', async () => {
+    store.chats.ensure({ id: 99, type: 'user', title: 'Kept', username: null }, 'normal', 0);
+    gateway.dialogs = [tgDialog()];
+    gateway.iterationError = new AppError('AUTH_REQUIRED', 'session revoked');
+    const report = await runSweep(deps);
+    expect(report).toMatchObject({ complete: false, iterationError: 'AUTH_REQUIRED', purged: 0 });
+    expect(store.chats.get(99)).not.toBeNull();
+  });
+
+  it('fills a delta larger than one page completely', async () => {
+    store.chats.ensure({ id: 10, type: 'user', title: 'Alice Example', username: null }, 'normal', 0);
+    store.chats.bumpTop(10, 5, false, 5, 0);
+    gateway.history.set(10, Array.from({ length: 250 }, (_, i) => tgMessage({ id: i + 6, date: i + 6 })));
+    gateway.dialogs = [tgDialog({ topMessage: tgMessage({ id: 255, date: 255 }) })];
+    const report = await runSweep(deps);
+    expect(report.deltas).toBe(1);
+    expect(gateway.callsTo('getHistory')).toHaveLength(3);
+    expect(store.messages.count()).toBe(250);
+    expect(store.messages.oldestStored(10)).toBe(6);
+    expect(logs.some((l) => l.includes('delta gap left'))).toBe(false);
+  });
+
+  it('logs the residual gap when the delta exceeds the page cap', async () => {
+    store.chats.ensure({ id: 10, type: 'user', title: 'Alice Example', username: null }, 'normal', 0);
+    store.chats.bumpTop(10, 5, false, 5, 0);
+    gateway.history.set(10, Array.from({ length: 1200 }, (_, i) => tgMessage({ id: i + 6, date: i + 6 })));
+    gateway.dialogs = [tgDialog({ topMessage: tgMessage({ id: 1205, date: 1205 }) })];
+    await runSweep(deps);
+    expect(gateway.callsTo('getHistory')).toHaveLength(10);
+    expect(store.messages.count()).toBe(1000);
+    expect(logs.some((l) => l.includes('chat 10: delta gap left'))).toBe(true);
   });
 });

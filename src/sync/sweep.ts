@@ -1,6 +1,6 @@
 import { AppError, describeError, type ErrorCode } from '../domain/errors.js';
 import type { ChatsRepo, DialogSnapshot } from '../store/chats-repo.js';
-import type { TelegramGateway, TgDialog } from '../telegram/types.js';
+import type { TelegramGateway, TgDialog, TgMessage } from '../telegram/types.js';
 import type { UpdateSink } from './update-sink.js';
 
 export interface SweepDeps {
@@ -21,8 +21,12 @@ export interface SweepReport {
   iterationError: ErrorCode | null;
 }
 
-// Beyond this many missed messages, older ones load on demand via read_history.
 const DELTA_LIMIT = 100;
+// getHistory is newest-first, so a delta bigger than one page is fetched by
+// paging backward from the newest. Beyond this many pages the oldest part of
+// the gap is left; it is not refetched later (backfill pages from the oldest
+// stored message, which is already older than the gap).
+const MAX_DELTA_PAGES = 10;
 
 export function toSnapshot(d: TgDialog): DialogSnapshot {
   return {
@@ -43,6 +47,10 @@ export function toSnapshot(d: TgDialog): DialogSnapshot {
 /// this catches whatever it still misses, fetching only the delta per chat.
 export async function runSweep(d: SweepDeps): Promise<SweepReport> {
   const report: SweepReport = { dialogs: 0, deltas: 0, failures: 0, purged: 0, complete: false, iterationError: null };
+  // iterDialogs pages by top-message date, so a chat that received a message
+  // (or was created) mid-sweep may never be yielded; anything touched since
+  // the sweep began must not be purged.
+  const sweepStart = d.now();
   const seen = new Set<number>();
   try {
     for await (const dialog of d.gateway.iterDialogs()) {
@@ -64,7 +72,7 @@ export async function runSweep(d: SweepDeps): Promise<SweepReport> {
   // device); a partial pass simply didn't reach it.
   if (report.complete) {
     for (const id of d.chats.allIds()) {
-      if (!seen.has(id)) {
+      if (!seen.has(id) && !touchedSince(d.chats, id, sweepStart)) {
         d.chats.purge(id);
         report.purged++;
       }
@@ -80,12 +88,32 @@ async function syncDialog(d: SweepDeps, dialog: TgDialog): Promise<boolean> {
   if (top && top.id > before.topMsgId) {
     // First sight has nothing to diff against; muted chats keep metadata only.
     if (before.watchLevel !== 'muted' && before.topMsgId > 0) {
-      const delta = await d.gateway.getHistory(dialog.chat.id, { limit: DELTA_LIMIT, afterId: before.topMsgId });
-      for (const m of [...delta].reverse()) d.sink.onMessage(m);
+      const delta = await fetchDelta(d, dialog.chat.id, before.topMsgId);
+      for (const m of delta.reverse()) d.sink.onMessage(m);
       fetchedDelta = true;
     }
     d.sink.onMessage(top);
   }
   d.chats.applySnapshot(toSnapshot(dialog), d.now());
   return fetchedDelta;
+}
+
+function touchedSince(chats: ChatsRepo, id: number, sinceSec: number): boolean {
+  const chat = chats.get(id);
+  return chat !== null && chat.updatedAt >= sinceSec;
+}
+
+/// Newest-first messages with id > oldTop. Pages backward until a short page
+/// or one reaching oldTop; at the page cap the oldest part of the gap stays.
+async function fetchDelta(d: SweepDeps, chatId: number, oldTop: number): Promise<TgMessage[]> {
+  const collected: TgMessage[] = [];
+  let beforeId: number | undefined;
+  for (let page = 0; page < MAX_DELTA_PAGES; page++) {
+    const batch = await d.gateway.getHistory(chatId, { limit: DELTA_LIMIT, afterId: oldTop, beforeId });
+    collected.push(...batch);
+    if (batch.length < DELTA_LIMIT || batch.some((m) => m.id <= oldTop)) return collected;
+    beforeId = Math.min(...batch.map((m) => m.id));
+  }
+  d.log(`chat ${chatId}: delta gap left (${collected.length} messages fetched, oldest id ${beforeId ?? 0}, previous top ${oldTop})`);
+  return collected;
 }

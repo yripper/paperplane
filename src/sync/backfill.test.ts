@@ -47,6 +47,18 @@ describe('readHistory', () => {
     expect(store.messages.history(channel.id, { limit: 10 })).toHaveLength(0);
   });
 
+  it('backfills below beforeId when the store only holds newer messages', async () => {
+    gateway.history.set(10, Array.from({ length: 200 }, (_, i) => tgMessage({ id: i + 1, date: i + 1 })));
+    for (let id = 101; id <= 200; id++) {
+      store.messages.upsert({
+        chatId: 10, msgId: id, senderId: 10, date: id, out: false, text: 'x', mediaKind: null,
+        replyToMsgId: null, editedAt: null, deletedAt: null, sentViaPaperplane: false,
+      });
+    }
+    const rows = await readHistory(deps, 10, { limit: 10, beforeId: 101 });
+    expect(rows.map((m) => m.msgId)).toEqual([100, 99, 98, 97, 96, 95, 94, 93, 92, 91]);
+  });
+
   it('throws NOT_FOUND for an unknown chat', async () => {
     await expect(readHistory(deps, 404, { limit: 10 })).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });

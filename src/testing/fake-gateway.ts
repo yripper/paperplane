@@ -12,6 +12,10 @@ export class FakeGateway implements TelegramGateway {
   readonly calls: { method: string; args: unknown[] }[] = [];
   failDialogsAfter: number | null = null;
   failHistoryFor = new Set<number>();
+  /** Thrown after the last dialog is yielded (instead of the default network error), e.g. AUTH_REQUIRED. */
+  iterationError: Error | null = null;
+  /** Runs right after each dialog is yielded and handled, to simulate live updates mid-sweep. */
+  afterDialog: ((index: number) => void) | null = null;
   failOn = new Map<string, Error>();
   private nextId = 1000;
 
@@ -30,7 +34,9 @@ export class FakeGateway implements TelegramGateway {
     for (const [i, d] of this.dialogs.entries()) {
       if (this.failDialogsAfter !== null && i >= this.failDialogsAfter) throw new Error('network down');
       yield d;
+      this.afterDialog?.(i);
     }
+    if (this.iterationError) throw this.iterationError;
   }
 
   async getHistory(chatId: number, opts: { limit: number; beforeId?: number; afterId?: number }): Promise<TgMessage[]> {
