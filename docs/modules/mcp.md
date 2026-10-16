@@ -2,7 +2,7 @@
 
 > **Living document.** Read this before modifying the module. Update it in the same change whenever the module's behavior, public surface, files, or dependencies change.
 
-**Source:** `src/mcp/` · **Last verified:** 2026-10-16 (tools and `buildServer` implemented; `http.ts` transport not yet implemented)
+**Source:** `src/mcp/` · **Last verified:** 2026-10-16 (tools, `buildServer` and `http.ts` transport implemented)
 
 ## Purpose
 
@@ -17,7 +17,7 @@ The MCP server Claude talks to: Streamable HTTP on `127.0.0.1`, bearer-token aut
 | `format.ts` | Row to view mappers (`formatMessage`, `formatChat`, `formatPending`), ISO dates |
 | `tools/annotations.ts` | `READ`, `LOCAL_WRITE`, `TELEGRAM_WRITE`, `DESTRUCTIVE` hint sets |
 | `tools/{read,tracking,messaging,organize,destructive}.ts` | One `register*Tools(server, deps)` per group |
-| `http.ts` (planned) | `node:http` server: Host check, bearer auth, stateless transport per request |
+| `http.ts` | `node:http` server: Host check, bearer auth, stateless transport per request |
 
 ## Public surface
 
@@ -52,6 +52,8 @@ Errors come back as `isError: true` with text `CODE: message` (plus `(retry afte
 ## Key methods
 
 - `buildServer(deps: ToolDeps): McpServer` (`src/mcp/server.ts:30`): registers all five groups on a fresh `McpServer`.
+- `startHttpServer(o: HttpOptions): Promise<RunningHttp>` (`src/mcp/http.ts:43`): `node:http` server bound to `127.0.0.1` only; `port: 0` picks a free port, reported in `RunningHttp.port`; `close()` drops open connections. Request checks run in this order in `handle` (`:48`): Host (`:49`, 403), path `/mcp` (`:50`, 404), bearer token (`:51`, 401), POST only (`:52`, 405). Handler errors are logged via `describeError` (never the token or bodies) and answer 500.
+- `tokenMatches(header, token)` (`src/mcp/http.ts:20`): constant-time compare of the full `Bearer <token>` header. `hostAllowed(host, port)` (`:31`): only `127.0.0.1:<port>` or `localhost:<port>`.
 - `ToolDeps` (`src/mcp/server.ts:22`) / `StatusReport` (`src/mcp/server.ts:13`): everything tools need; `status` is injected by the daemon.
 - `run(fn)` (`src/mcp/result.ts:16`): wraps a handler, `ok` (`:4`) for JSON text, `fail` (`:10`) maps `AppError` to `CODE: message`, anything else to `INTERNAL`.
 - `formatMessage` / `formatChat` / `formatPending` (`src/mcp/format.ts:37`, `:51`, `:66`).
@@ -72,4 +74,4 @@ Errors come back as `isError: true` with text `CODE: message` (plus `(retry afte
 
 ## Testing
 
-`src/mcp/server.test.ts` uses an in-memory MCP client (`connect` and `makeToolDeps` in `src/testing/tool-deps.ts`) against `FakeGateway` and an in-memory store. It covers: the tool list and annotations, `get_pending`, `read_history`, `search_messages`, `send_message` (success, empty text, `AUTH_REQUIRED`, `FLOOD_WAIT`, plain `Error` as `INTERNAL`), `delete_chat` revoke without confirmation, `set_label` and `clear_label`, `cleanup_plan` (including rejection of criteria that narrow nothing) and `cleanup_apply`, and oversized-input rejection. Not covered: `status`, `list_chats`, `get_chat_info`, `set_watch_level`, `save_draft`, `mark_read`, the folder tools, archive/mute tools, `leave_chat`, `block_user`. `src/mcp/format.test.ts` covers `formatMessage`.
+`src/mcp/http.test.ts` binds port 0 on `127.0.0.1` and covers 401 without token, 403 foreign Host, 404 other path, 405 GET, a real `initialize` round trip, and the `tokenMatches` / `hostAllowed` helpers. `src/mcp/server.test.ts` uses an in-memory MCP client (`connect` and `makeToolDeps` in `src/testing/tool-deps.ts`) against `FakeGateway` and an in-memory store. It covers: the tool list and annotations, `get_pending`, `read_history`, `search_messages`, `send_message` (success, empty text, `AUTH_REQUIRED`, `FLOOD_WAIT`, plain `Error` as `INTERNAL`), `delete_chat` revoke without confirmation, `set_label` and `clear_label`, `cleanup_plan` (including rejection of criteria that narrow nothing) and `cleanup_apply`, and oversized-input rejection. Not covered: `status`, `list_chats`, `get_chat_info`, `set_watch_level`, `save_draft`, `mark_read`, the folder tools, archive/mute tools, `leave_chat`, `block_user`. `src/mcp/format.test.ts` covers `formatMessage`.
