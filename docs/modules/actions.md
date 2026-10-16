@@ -28,14 +28,14 @@ All actions take `d: ActionDeps` first and a single input object.
 - messaging (`src/actions/messaging.ts`): `sendMessage` `:4`, `saveDraft` `:17`, `markRead` `:22`.
 - organize (`src/actions/organize.ts`): `listFolders` `:4`, `createFolder` `:8`, `editFolder` `:12`, `deleteFolder` `:20`, `archiveChats` `:24`, `unarchiveChats` `:29`, `setChatMuted` `:34`.
 - destructive (`src/actions/destructive.ts`): `deleteChat` `:7`, `leaveChat` `:27`, `blockUser` `:37`.
-- cleanup (`src/actions/cleanup.ts`): `createCleanupPlan` `:15`, `applyCleanupPlan` `:31`, `CleanupReport` `:8`.
+- cleanup (`src/actions/cleanup.ts`): `createCleanupPlan` `:15`, `applyCleanupPlan` `:51`, `CleanupReport` `:8`.
 
 ## Key methods
 
 - `sendMessage`: validates the chat, takes the per-chat gap then the global send slot, and sends (the audited part, `messaging.ts:8`). It then stores the returned message via `sink.onMessage(..., { sentViaPaperplane: true })` (`:13`) so pending status reflects the reply before the live update. A store failure is caught and audited as `send_message.store` (error); the sent message is still returned.
 - `deleteChat` modes: `delete` and `revoke` purge the chat locally; `clear` soft-deletes all messages and resets the top (`setTop(..., 0, ...)`).
-- `createCleanupPlan` requires a narrowing criterion (`inactiveDays`, non-empty `types`, `minUnread`, `mutedOnly: true`, `archivedOnly: true`); `false`/empty values are rejected (`cleanup.ts:16-22`).
-- `applyCleanupPlan` (`cleanup.ts:55`): re-reads each item with `recheck` (`:34`): missing chat -> `failed` `NOT_FOUND`, now `full` -> `failed` `FORBIDDEN`, no Telegram call or limiter slot. `remove` mode claims the plan with `markApplied`, then runs items one by one through the destructive limiter. `archive` mode re-checks, takes one limiter slot before `markApplied` (rate limit throws `RATE_LIMITED`, plan stays a draft), then makes one gateway call; a gateway error is returned as `failed` for every id, not thrown. If nothing is left to archive there is no call and no slot, but the plan is still marked applied.
+- `createCleanupPlan` requires a narrowing criterion (`inactiveDays`, non-empty `types`, `minUnread`, `mutedOnly: true`, `archivedOnly: true`); `false`/empty values are rejected (`cleanup.ts:17-23`).
+- `applyCleanupPlan` (`cleanup.ts:51`): re-reads each item with `recheck` (`:42`): missing chat -> `failed` `NOT_FOUND`, now `full` -> `failed` `FORBIDDEN`, no Telegram call or limiter slot. `remove` mode claims the plan with `markApplied`, then runs items one by one through the destructive limiter. `archive` mode re-checks, takes one limiter slot before `markApplied` (rate limit throws `RATE_LIMITED`, plan stays a draft), then makes one gateway call; a gateway error is returned as `failed` for every id, not thrown. If nothing is left to archive there is no call and no slot, but the plan is still marked applied.
 
 ## Dependencies
 
