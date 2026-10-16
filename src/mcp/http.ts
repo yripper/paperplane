@@ -17,6 +17,8 @@ export interface RunningHttp {
 }
 
 export function tokenMatches(header: string | undefined, token: string): boolean {
+  // Fail closed: an empty token would accept the literal header "Bearer ".
+  if (!token) return false;
   const expected = Buffer.from(`Bearer ${token}`);
   const got = Buffer.from(header ?? '');
   // timingSafeEqual throws on length mismatch, so compare lengths first.
@@ -25,7 +27,8 @@ export function tokenMatches(header: string | undefined, token: string): boolean
 
 /// A malicious web page can rebind its own hostname to 127.0.0.1, but the
 /// browser still sends that hostname in Host, so loopback-only Host values
-/// block it. The SDK's host validation is Express-only, hence this check.
+/// block it. The SDK's built-in host validation is deprecated in favor of
+/// external checks, hence this one.
 export function hostAllowed(host: string | undefined, port: number): boolean {
   return host === `127.0.0.1:${port}` || host === `localhost:${port}`;
 }
@@ -44,13 +47,15 @@ export async function startHttpServer(o: HttpOptions): Promise<RunningHttp> {
     if ((req.url ?? '').split('?')[0] !== '/mcp') return reply(res, 404);
     if (!tokenMatches(req.headers.authorization, o.token)) return reply(res, 401);
     if (req.method !== 'POST') return reply(res, 405);
-    const mcp = o.buildServer();
-    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
-    res.on('close', () => {
-      void transport.close();
-      void mcp.close();
-    });
+    // Everything that can throw sits inside the try: the listener calls
+    // handle() with `void`, so an escaping rejection would be unhandled.
     try {
+      const mcp = o.buildServer();
+      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
+      res.on('close', () => {
+        transport.close().catch((e: unknown) => o.log(`mcp: transport close failed: ${describeError(e)}`));
+        mcp.close().catch((e: unknown) => o.log(`mcp: server close failed: ${describeError(e)}`));
+      });
       await mcp.connect(transport);
       await transport.handleRequest(req, res);
     } catch (e) {

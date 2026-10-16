@@ -48,6 +48,38 @@ describe('startHttpServer', () => {
     expect((await send({ method: 'GET', headers: auth() })).status).toBe(405);
   });
 
+  it('checks Host before the token: foreign Host without a token is 403, not 401', async () => {
+    expect((await send({ headers: { host: `evil.example:${running.port}` } })).status).toBe(403);
+  });
+
+  it('checks the token before the method: GET without a token is 401', async () => {
+    expect((await send({ method: 'GET', headers: { host: `127.0.0.1:${running.port}` } })).status).toBe(401);
+  });
+
+  it('rejects a wrong token of the same length', async () => {
+    const wrong = 'x'.repeat(TOKEN.length);
+    expect((await send({ headers: { host: `127.0.0.1:${running.port}`, authorization: `Bearer ${wrong}` } })).status).toBe(401);
+  });
+
+  it.each(['Basic x', `bearer ${TOKEN}`, TOKEN])('rejects a malformed authorization scheme (%s)', async (authorization) => {
+    expect((await send({ headers: { host: `127.0.0.1:${running.port}`, authorization } })).status).toBe(401);
+  });
+
+  it('answers 500 instead of an unhandled rejection when building the server throws', async () => {
+    await running.close();
+    const lines: string[] = [];
+    running = await startHttpServer({
+      port: 0,
+      token: TOKEN,
+      log: (l) => lines.push(l),
+      buildServer: () => {
+        throw new Error('boom');
+      },
+    });
+    expect((await send({ headers: auth(), body: '{}' })).status).toBe(500);
+    expect(lines).toEqual(['mcp: request failed: Error: boom']);
+  });
+
   it('answers an MCP initialize request', async () => {
     const res = await send({
       headers: { ...auth(), 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
@@ -68,6 +100,12 @@ describe('tokenMatches / hostAllowed', () => {
     expect(tokenMatches(`Bearer ${TOKEN}`, TOKEN)).toBe(true);
     expect(tokenMatches(`Bearer ${TOKEN}x`, TOKEN)).toBe(false);
     expect(tokenMatches(undefined, TOKEN)).toBe(false);
+    expect(tokenMatches(`Bearer ${TOKEN.slice(0, -1)}`, TOKEN)).toBe(false);
+  });
+
+  it('fails closed on an empty configured token', () => {
+    expect(tokenMatches('Bearer ', '')).toBe(false);
+    expect(tokenMatches(undefined, '')).toBe(false);
   });
 
   it('allows only loopback hosts on the right port', () => {

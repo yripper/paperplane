@@ -30,6 +30,9 @@ export const securityCli: CommandRunner = {
       child.stderr.on('data', (chunk: Buffer) => (stderr += chunk.toString()));
       child.on('error', reject);
       child.on('close', (code) => resolve({ code: code ?? 1, stdout, stderr }));
+      // EPIPE when security exits before reading stdin would otherwise be an
+      // uncaught 'error' event; the close/error handlers already report failure.
+      child.stdin.on('error', () => {});
       child.stdin.end(stdin ?? '');
     });
   },

@@ -21,15 +21,15 @@ macOS Keychain access through the built-in `security` CLI: api_hash, bearer toke
 - `SecretStore` interface (`keychain.ts:4`): `get` (null when missing), `set`, `delete`.
 - `CommandRunner` interface (`keychain.ts:10`): runs `/usr/bin/security` with args and optional stdin, returns `{ code, stdout, stderr }`.
 - `securityCli` (`keychain.ts:23`): the real `CommandRunner` (spawns `/usr/bin/security`).
-- `Keychain` class (`keychain.ts:41`): `new Keychain(runner?, service?)`, service defaults to `paperplane`.
+- `Keychain` class (`keychain.ts:44`): `new Keychain(runner?, service?)`, service defaults to `paperplane`.
 - `SECRET_ACCOUNTS` (`keychain.ts:14`): `apiHash` = `api_hash`, `bearerToken` = `bearer_token`.
 
 ## Key methods
 
-- `Keychain.get` (`keychain.ts:47`): `find-generic-password ... -w`; exit 44 returns `null`, other non-zero throws `INTERNAL`; strips one trailing newline.
-- `Keychain.set` (`keychain.ts:54`): validates account and value, then upserts via `security -i` with the command on stdin (`add-generic-password -U`).
-- `Keychain.delete` (`keychain.ts:61`): `delete-generic-password`; a missing item (44) counts as success.
-- `assertSafe` (`keychain.ts:69`): rejects anything outside `SAFE_VALUE` (`keychain.ts:21`) with `VALIDATION`.
+- `Keychain.get` (`keychain.ts:50`): `find-generic-password ... -w`; exit 44 returns `null`, other non-zero throws `INTERNAL`; strips one trailing newline.
+- `Keychain.set` (`keychain.ts:57`): validates account and value, then upserts via `security -i` with the command on stdin (`add-generic-password -U`).
+- `Keychain.delete` (`keychain.ts:64`): `delete-generic-password`; a missing item (44) counts as success.
+- `assertSafe` (`keychain.ts:72`): rejects anything outside `SAFE_VALUE` (`keychain.ts:21`) with `VALIDATION`.
 
 ## Dependencies
 
@@ -43,6 +43,7 @@ macOS Keychain access through the built-in `security` CLI: api_hash, bearer toke
 - Exit code 44 means item not found (`ITEM_NOT_FOUND`, `keychain.ts:18`); `get` maps it to `null`, `delete` to success.
 - Values are interpolated into an interactive command line, so `set` only accepts `[A-Za-z0-9+/=_.:-]`; no spaces, quotes or newlines. Binary auth keys must be encoded (base64/hex) by the caller.
 - Error messages never include the secret value.
+- `securityCli` swallows `child.stdin` errors (`keychain.ts:35`): an EPIPE when `security` exits before reading stdin would otherwise be an uncaught `'error'` event that kills the process; the `close`/`error` handlers already report the failure.
 
 ## Testing
 
