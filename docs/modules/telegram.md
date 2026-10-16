@@ -2,13 +2,13 @@
 
 > **Living document.** Read this before modifying the module. Update it in the same change whenever the module's behavior, public surface, files, or dependencies change.
 
-**Source:** `src/telegram/` · **Last verified:** 2026-10-16 (module not yet implemented: planned design, no code)
+**Source:** `src/telegram/` · **Last verified:** 2026-10-16 (partially implemented: `keychain-auth-keys.ts` exists; other files are planned)
 
 ## Purpose
 
 The only module that imports mtcute. Owns the MTProto user client (login, live updates, catch-up), a Keychain-backed auth-key store, and the `TelegramGateway` adapter that converts mtcute types into plain Paperplane types and mtcute errors into `AppError`s. If this breaks, nothing syncs and no action reaches Telegram.
 
-## Structure (planned)
+## Structure (`keychain-auth-keys.ts` implemented, rest planned)
 
 | File | Purpose |
 |---|---|
@@ -19,15 +19,19 @@ The only module that imports mtcute. Owns the MTProto user client (login, live u
 
 ## Public surface
 
-_TBD — fill on first substantive change._
+- `KeychainAuthKeys` (`src/telegram/keychain-auth-keys.ts:13`): `IAuthKeysRepository` implementation, constructed as `new KeychainAuthKeys(secrets: SecretStore)`.
 
 ## Key methods
 
-_TBD — fill on first substantive change._
+- `set(dc, key)` (`keychain-auth-keys.ts:19`): writes the key as base64 under Keychain account `authkey:<dc>` immediately; `null` deletes it.
+- `get(dc)` (`keychain-auth-keys.ts:25`): reads Keychain once per DC, then serves from an in-process cache.
+- `setTemp` / `getTemp` (`keychain-auth-keys.ts:33`, `:38`): temp (PFS) keys, memory only; `getTemp` returns `null` once `expires <= now`.
+- `deleteByDc(dc)` (`keychain-auth-keys.ts:43`): removes the permanent key and that DC's temp keys.
+- `deleteAll()` (`keychain-auth-keys.ts:48`): clears DCs 1-5 (`DC_IDS`, `:6`) and all temp keys.
 
 ## Dependencies
 
-_TBD — fill on first substantive change._
+- `SecretStore` from `src/secrets/keychain.ts` (`KeychainAuthKeys` takes it by injection); type-only import of `IAuthKeysRepository` from `@mtcute/node`.
 
 ## Gotchas & invariants
 
@@ -39,8 +43,9 @@ _TBD — fill on first substantive change._
 - Folder titles are `tl.TypeTextWithEntities` (`{ _: 'textWithEntities', text, entities: [] }`), not strings. `includePeers`, `excludePeers` and `pinnedPeers` are all required on a `RawDialogFilter`.
 - There's no high-level mute method; use the raw `account.updateNotifySettings` call with `inputNotifyPeer` and `inputPeerNotifySettings.muteUntil`.
 - mtcute retries FLOOD_WAIT up to `maxWait` 10s / 5 retries by default. Above that it throws `tl.RpcError` (`code 420`, wait time in `.seconds`), which the gateway maps to `AppError('FLOOD_WAIT')`.
+- Temp (PFS) auth keys are memory-only and never reach Keychain; mtcute re-negotiates them after a restart. `deleteAll` only clears DCs 1-5, since Keychain items can't be enumerated cheaply. Keychain values must match `[A-Za-z0-9+/=_.:-]`; standard base64 does.
 - Never log message content. mtcute's log handler is redirected and must drop the `args`.
 
 ## Testing
 
-_TBD — fill on first substantive change._
+- `pnpm test src/telegram`: `KeychainAuthKeys` tests run against `MemorySecretStore`; never touch the real Keychain.
