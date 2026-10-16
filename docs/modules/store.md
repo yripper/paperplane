@@ -2,7 +2,7 @@
 
 > **Living document.** Read this before modifying the module. Update it in the same change whenever the module's behavior, public surface, files, or dependencies change.
 
-**Source:** `src/store/` · **Last verified:** 2026-10-16 (FTS control-character stripping)
+**Source:** `src/store/` · **Last verified:** 2026-10-16 (pending: newest first, DMs + full-watch groups only)
 
 ## Purpose
 
@@ -47,7 +47,7 @@ Paperplane's own SQLite database at `~/.paperplane/paperplane.db` (better-sqlite
 - `CursorsRepo`: `get` `:12` (null when no cursor), `set` `:19` (upsert on `chat_id`). Holds `oldestSyncedMsgId` and `backfillComplete` for backfill; `ChatsRepo.purge` deletes it.
 - `LabelsRepo`: `set` `:17` (upsert via ON CONFLICT), `get` `:27`, `clear` `:32`.
 - `AuditRepo`: `record` `:7`, `recent` `:11` (newest first). `CleanupPlansRepo`: `insert` `:25`, `get` `:34` (parses criteria/items JSON), `markApplied` `:50` (atomic `draft` -> `applied`, returns false if already applied).
-- `listPending`: SQL at `pending-query.ts:16`; keeps only rows whose `effectiveStatus` is `pending`/`seen`, sorts `full` watch level first, then by `waitingSinceSec` ascending (longest wait first), then applies `limit`. `waiting_since` = oldest alive incoming message after my last alive outgoing message, falling back to `top_msg_date` when no history is stored.
+- `listPending`: SQL at `pending-query.ts:22`; in SQL keeps only users (DMs) plus groups/supergroups on `full` watch (bots, channels, normal groups and the Telegram service account 777000 `TELEGRAM_SERVICE_ID` never count), keeps only rows whose `effectiveStatus` is `pending`/`seen`, sorts `full` watch level first, then by `topMsgDate` descending (newest incoming message first; oldest-first buried current chats under years-old read-and-ignored ones), then applies `limit`. `waiting_since` = oldest alive incoming message after my last alive outgoing message, falling back to `top_msg_date` when no history is stored.
 
 ## Dependencies
 

@@ -48,7 +48,7 @@ export function registerReadTools(server: McpServer, d: ToolDeps): void {
     'get_pending',
     {
       description:
-        "Chats waiting on the user's reply: the last message is theirs. 'seen' means the user read it but didn't answer. Full-watch chats first, then longest waiting. Excludes muted chats and chats labeled done/waiting/snoozed.",
+        "Chats waiting on the user's reply: DMs whose last message is theirs, and groups on full watch with activity since the user's last message (normal groups and channels never count). 'seen' means the user read it but didn't answer. Full-watch chats first, then newest incoming message first. Excludes muted chats, bots, Telegram's service account and chats labeled done/waiting/snoozed.",
       inputSchema: { limit: z.number().int().min(1).max(100).default(30) },
       annotations: READ,
     },

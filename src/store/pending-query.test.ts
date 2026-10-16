@@ -4,15 +4,15 @@ import { type Db, openDb } from './db.js';
 import { LabelsRepo } from './labels-repo.js';
 import { MessagesRepo } from './messages-repo.js';
 import { listPending } from './pending-query.js';
-import type { WatchLevel } from './types.js';
+import type { ChatType, WatchLevel } from './types.js';
 
 let db: Db;
 let chats: ChatsRepo;
 let messages: MessagesRepo;
 let labels: LabelsRepo;
 
-function chatWithIncoming(id: number, watch: WatchLevel, dates: number[]): void {
-  chats.ensure({ id, type: 'user', title: `Chat ${id}`, username: null }, watch, 0);
+function chatWithIncoming(id: number, watch: WatchLevel, dates: number[], type: ChatType = 'user'): void {
+  chats.ensure({ id, type, title: `Chat ${id}`, username: null }, watch, 0);
   dates.forEach((date, i) => {
     messages.upsert({
       chatId: id, msgId: i + 1, senderId: id, date, out: false, text: 'x', mediaKind: null,
@@ -30,11 +30,11 @@ beforeEach(() => {
 });
 
 describe('listPending', () => {
-  it('lists full chats first, then by who has waited longest', () => {
+  it('lists full chats first even when older, then newest incoming message first', () => {
     chatWithIncoming(1, 'normal', [100]);
     chatWithIncoming(2, 'normal', [50]);
-    chatWithIncoming(3, 'full', [300]);
-    expect(listPending(db, 1000, { limit: 10 }).map((p) => p.chat.id)).toEqual([3, 2, 1]);
+    chatWithIncoming(3, 'full', [10]);
+    expect(listPending(db, 1000, { limit: 10 }).map((p) => p.chat.id)).toEqual([3, 1, 2]);
   });
 
   it('measures waiting time from the oldest unanswered incoming message', () => {
@@ -63,6 +63,23 @@ describe('listPending', () => {
     labels.set({ chatId: 2, label: 'done', snoozeUntil: null, note: null, updatedAt: 0 });
     labels.set({ chatId: 3, label: 'snoozed', snoozeUntil: 5000, note: 'after lunch', updatedAt: 0 });
     expect(listPending(db, 1000, { limit: 10 }).map((p) => p.chat.id)).toEqual([4]);
+  });
+
+  it('excludes bots and the Telegram service account', () => {
+    chatWithIncoming(5, 'normal', [100], 'bot');
+    chatWithIncoming(777000, 'normal', [100]);
+    chatWithIncoming(1, 'normal', [100]); // positive control
+    expect(listPending(db, 1000, { limit: 10 }).map((p) => p.chat.id)).toEqual([1]);
+  });
+
+  it('counts groups only on full watch, and never channels', () => {
+    chatWithIncoming(1, 'normal', [100], 'group');
+    chatWithIncoming(2, 'normal', [100], 'supergroup');
+    chatWithIncoming(3, 'full', [100], 'group');
+    chatWithIncoming(4, 'full', [100], 'supergroup');
+    chatWithIncoming(5, 'full', [100], 'channel');
+    chatWithIncoming(6, 'normal', [100]); // positive control: DMs stay pending at normal
+    expect(listPending(db, 1000, { limit: 10 }).map((p) => p.chat.id).sort()).toEqual([3, 4, 6]);
   });
 
   it('brings back a chat whose snooze expired, with its label attached', () => {
