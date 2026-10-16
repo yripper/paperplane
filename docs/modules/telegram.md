@@ -24,8 +24,8 @@ The only module that imports mtcute. Owns the MTProto user client (login, live u
 
 - `TelegramGateway` (`src/telegram/types.ts:56`): the module's contract. Everything outside `src/telegram` uses it, never mtcute. `getHistory` returns newest first. Test double: `FakeGateway` (`src/testing/fake-gateway.ts`).
 - Plain types (`types.ts:3-51`): `TgPeer`, `TgMessage`, `TgDialog`, `TgFolder`, `TgDeleteEvent`, `TgReadEvent`, `DeleteMode`.
-- `createSession(o, sink, hooks)` (`session.ts:29`): the daemon's single connection; returns `{ gateway, connect, destroy }`. `login` (`session.ts:67`) and `logout` (`session.ts:77`) are the CLI flows. `connect()` returns `'auth_required'` instead of prompting.
-- `MtcuteGateway` (`gateway.ts:27`): `TelegramGateway` over a `TelegramClient`. `createTelegramClient` (`client.ts:13`) builds that client.
+- `createSession(o, sink, hooks)` (`session.ts:29`): the daemon's single connection; returns `{ gateway, connect, destroy }`. `login` (`session.ts:70`) and `logout` (`session.ts:82`) are the CLI flows; they build the client with updates disabled and rethrow mapped errors. `connect()` returns `'auth_required'` instead of prompting.
+- `MtcuteGateway` (`gateway.ts:27`): `TelegramGateway` over a `TelegramClient`. `createTelegramClient` (`client.ts:16`) builds that client.
 - `mapTelegramError` (`errors.ts:16`): `AppError` passes through, everything else is mapped or wrapped as `INTERNAL`.
 - Adapters (`adapt.ts:9`, `:15`, `:20`, `:34`): `mapChatType`, `adaptPeer`, `adaptMessage`, `adaptDialog`.
 - `KeychainAuthKeys` (`src/telegram/keychain-auth-keys.ts:13`): `IAuthKeysRepository` implementation, constructed as `new KeychainAuthKeys(secrets: SecretStore)`.
@@ -37,15 +37,18 @@ The only module that imports mtcute. Owns the MTProto user client (login, live u
 - `setTemp` / `getTemp` (`keychain-auth-keys.ts:33`, `:38`): temp (PFS) keys, memory only; `getTemp` returns `null` once `expires <= now`.
 - `deleteByDc(dc)` (`keychain-auth-keys.ts:43`): removes the permanent key and that DC's temp keys.
 - `deleteAll()` (`keychain-auth-keys.ts:48`): clears DCs 1-5 (`DC_IDS`, `:6`) and all temp keys.
-
 - `iterDialogs` (`gateway.ts:38`): passes `archived: 'keep'`; the sweep depends on archived chats appearing.
 - `getHistory` (`gateway.ts:47`): `beforeId` becomes an exclusive offset, `afterId` an exclusive `minId`.
-- `setMuted` (`gateway.ts:126`): raw `account.updateNotifySettings` with `muteUntil` INT32_MAX (or 0).
-- `createSession` handlers (`session.ts:30-46`): each update runs in a try/catch and reports through `hooks.onUpdateError`.
+- `createFolder` / `editFolder` (`gateway.ts:83`, `:97`): reject an empty include list with `VALIDATION` (Telegram would answer `FILTER_INCLUDE_EMPTY`).
+- `setMuted` (`gateway.ts:129`): raw `account.updateNotifySettings` with `muteUntil` INT32_MAX (or 0).
+- `createSession` handlers (`session.ts:31-48`): each update runs in a try/catch and reports through `hooks.onUpdateError`; thread read receipts are dropped (`session.ts:42-47`).
+- `logout` (`session.ts:82`): if `logOut` fails with `AUTH_REQUIRED` (already revoked), it calls `tg.storage.clear(true)` to drop the stale Keychain key and returns normally.
 
 ## Dependencies
 
-- `SecretStore` from `src/secrets/keychain.ts` (`KeychainAuthKeys` takes it by injection); type-only import of `IAuthKeysRepository` from `@mtcute/node`.
+- `@mtcute/node` (runtime: `TelegramClient`, `SqliteStorage`, `tl`, `getMarkedPeerId`, error classes) and `@mtcute/core` types, only inside this module.
+- `AppError` from `src/domain/errors.ts`; `ChatType` from `src/store/types.ts` (type only); `UpdateSink` from `src/sync/update-sink.ts` (type only, used by `session.ts`).
+- `SecretStore` from `src/secrets/keychain.ts` (`KeychainAuthKeys` takes it by injection).
 
 ## Gotchas & invariants
 
@@ -62,7 +65,9 @@ The only module that imports mtcute. Owns the MTProto user client (login, live u
 - Never log message content. mtcute's log handler is redirected and must drop the `args`.
 
 - `iterDialogs` needs `archived: 'keep'` (mtcute defaults to `'exclude'`), or archived chats never sync.
-- `getHistory` offset is exclusive and `minId` is exclusive.
+- `onHistoryRead` fires for forum topics and comment threads too (`isDiscussion`, `isMonoForum`): `chatId` is the whole supergroup, `maxReadId` is the thread pointer and `unreadCount` is 0. The session ignores those, or they would zero the chat's unread count.
+- Login/logout clients use `disableUpdates: true` and `catchUp: false` (`client.ts:16`): catching up would advance pts in `mtcute.db` and the daemon would miss those updates.
+- `SLOWMODE_WAIT_%d` and `FLOOD_PREMIUM_WAIT_%d` also map to `FLOOD_WAIT` with seconds.
 - Mute uses INT32_MAX as "forever": a convention, still to be verified in the live smoke test.
 - Update handlers never throw into mtcute: one bad update must not stop the stream.
 - Revocation surfaces as `AppError('AUTH_REQUIRED')` (the sweep relies on this); non-`AppError` failures become `INTERNAL`.

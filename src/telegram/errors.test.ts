@@ -6,6 +6,11 @@ import { mapTelegramError } from './errors.js';
 const rpc = (errorCode: number, errorMessage: string): unknown => tl.RpcError.fromTl({ errorCode, errorMessage });
 
 describe('mapTelegramError', () => {
+  it('maps slow-mode and premium flood waits to FLOOD_WAIT with seconds', () => {
+    expect(mapTelegramError(rpc(420, 'SLOWMODE_WAIT_15'))).toMatchObject({ code: 'FLOOD_WAIT', retryAfterSec: 15 });
+    expect(mapTelegramError(rpc(420, 'FLOOD_PREMIUM_WAIT_7'))).toMatchObject({ code: 'FLOOD_WAIT', retryAfterSec: 7 });
+  });
+
   it('maps FLOOD_WAIT with the wait time', () => {
     expect(mapTelegramError(rpc(420, 'FLOOD_WAIT_30'))).toMatchObject({ code: 'FLOOD_WAIT', retryAfterSec: 30 });
   });

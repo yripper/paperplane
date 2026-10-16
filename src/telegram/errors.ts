@@ -18,6 +18,9 @@ export function mapTelegramError(e: unknown): AppError {
   if (tl.RpcError.is(e, 'FLOOD_WAIT_%d')) {
     return new AppError('FLOOD_WAIT', `Telegram asked to wait ${e.seconds}s`, e.seconds);
   }
+  if (tl.RpcError.is(e, 'SLOWMODE_WAIT_%d') || tl.RpcError.is(e, 'FLOOD_PREMIUM_WAIT_%d')) {
+    return new AppError('FLOOD_WAIT', `Telegram asked to wait ${e.seconds}s`, e.seconds);
+  }
   if (tl.RpcError.is(e)) {
     if (AUTH_ERRORS.has(e.text)) return new AppError('AUTH_REQUIRED', 'Telegram session is not valid: run `paperplane login`');
     if (NOT_FOUND_ERRORS.test(e.text)) return new AppError('NOT_FOUND', `Telegram: ${e.text}`);

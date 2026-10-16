@@ -82,6 +82,7 @@ export class MtcuteGateway implements TelegramGateway {
 
   createFolder(input: { title: string; chatIds: number[] }): Promise<TgFolder> {
     return this.guard(async () => {
+      if (input.chatIds.length === 0) throw new AppError('VALIDATION', 'a folder needs at least one chat');
       const includePeers = await Promise.all(input.chatIds.map((id) => this.tg.resolvePeer(id)));
       const folder = await this.tg.createFolder({
         title: { _: 'textWithEntities', text: input.title, entities: [] },
@@ -100,10 +101,12 @@ export class MtcuteGateway implements TelegramGateway {
       const remove = new Set(change.removeChatIds ?? []);
       const kept = current.includePeers.filter((p) => !remove.has(peerIdOf(p) ?? Number.NaN));
       const added = await Promise.all((change.addChatIds ?? []).map((id) => this.tg.resolvePeer(id)));
+      const includePeers = [...kept, ...added];
+      if (includePeers.length === 0) throw new AppError('VALIDATION', 'a folder needs at least one chat');
       const folder = await this.tg.editFolder({
         folder: current,
         modification: {
-          includePeers: [...kept, ...added],
+          includePeers,
           ...(change.title === undefined ? {} : { title: { _: 'textWithEntities', text: change.title, entities: [] } }),
         },
       });

@@ -39,9 +39,12 @@ export function createSession(o: ClientOptions, sink: UpdateSink, hooks: Session
   tg.onNewMessage.add((m) => apply('new_message', () => sink.onMessage(adaptMessage(m), { live: true })));
   tg.onEditMessage.add((m) => apply('edit_message', () => sink.onEdit(adaptMessage(m))));
   tg.onDeleteMessage.add((u) => apply('delete_message', () => sink.onDelete({ channelId: u.channelId, messageIds: u.messageIds })));
-  tg.onHistoryRead.add((u) =>
-    apply('history_read', () => sink.onRead({ chatId: u.chatId, maxReadId: u.maxReadId, isOutbox: u.isOutbox, unreadCount: u.unreadCount })),
-  );
+  tg.onHistoryRead.add((u) => {
+    // Forum-topic and comment-thread receipts carry the whole chat id but the
+    // thread's pointer and a hard-coded 0 unread; applying them would zero the chat.
+    if (u.isDiscussion || u.isMonoForum) return;
+    apply('history_read', () => sink.onRead({ chatId: u.chatId, maxReadId: u.maxReadId, isOutbox: u.isOutbox, unreadCount: u.unreadCount }));
+  });
   tg.onError.add((e) => hooks.onClientError(e));
 
   return {
@@ -65,19 +68,27 @@ export function createSession(o: ClientOptions, sink: UpdateSink, hooks: Session
 }
 
 export async function login(o: ClientOptions, prompts: LoginPrompts): Promise<string> {
-  const tg = createTelegramClient(o);
+  const tg = createTelegramClient(o, false);
   try {
     const me = await tg.start({ phone: prompts.phone, code: prompts.code, password: prompts.password, codeSentCallback: () => {} });
     return me.displayName;
+  } catch (e) {
+    throw mapTelegramError(e);
   } finally {
     await tg.destroy();
   }
 }
 
 export async function logout(o: ClientOptions): Promise<void> {
-  const tg = createTelegramClient(o);
+  const tg = createTelegramClient(o, false);
   try {
     await tg.logOut();
+  } catch (e) {
+    const err = mapTelegramError(e);
+    if (err.code !== 'AUTH_REQUIRED') throw err;
+    // Already revoked server-side: logOut fails before mtcute clears anything,
+    // so wipe the stale auth key (Keychain) and kv state ourselves.
+    await tg.storage.clear(true);
   } finally {
     await tg.destroy();
   }
