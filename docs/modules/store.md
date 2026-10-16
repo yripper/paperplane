@@ -2,7 +2,7 @@
 
 > **Living document.** Read this before modifying the module. Update it in the same change whenever the module's behavior, public surface, files, or dependencies change.
 
-**Source:** `src/store/` · **Last verified:** 2026-10-16 (schema layer, chats/messages/labels/cursors repositories and pending query implemented)
+**Source:** `src/store/` · **Last verified:** 2026-10-16 (schema layer, chats/messages/labels/cursors/audit/cleanup-plans repositories and pending query implemented)
 
 ## Purpose
 
@@ -19,6 +19,8 @@ Paperplane's own SQLite database at `~/.paperplane/paperplane.db` (better-sqlite
 | `messages-repo.ts` | `MessagesRepo` (upsert, soft delete, history, FTS search) |
 | `cursors-repo.ts` | `CursorsRepo` + `SyncCursor`: per-chat backfill progress |
 | `labels-repo.ts` | `LabelsRepo` (upsert/get/clear), `rowToLabel` |
+| `audit-repo.ts` | `AuditRepo`: metadata-only action log |
+| `cleanup-plans-repo.ts` | `CleanupPlansRepo`, `CleanupPlan`, `CleanupItem` |
 | `pending-query.ts` | `listPending`: SQL + ordering behind `get_pending` |
 | `db.test.ts`, `chats-repo.test.ts`, `messages-repo.test.ts`, `pending-query.test.ts` | Schema/migrations/FTS sync; repository behavior; pending ordering |
 
@@ -33,6 +35,7 @@ Paperplane's own SQLite database at `~/.paperplane/paperplane.db` (better-sqlite
 - `MessagesRepo`: `src/store/messages-repo.ts:29`.
 - `CursorsRepo`: `src/store/cursors-repo.ts:9`; `SyncCursor` `:3`.
 - `LabelsRepo`: `src/store/labels-repo.ts:14`; `rowToLabel` `:4`.
+- `AuditRepo`: `src/store/audit-repo.ts:4`; `CleanupPlansRepo`: `src/store/cleanup-plans-repo.ts:22`; `CleanupItem` `:5`, `CleanupPlan` `:12`.
 - `listPending(db, nowSec, { limit }): PendingItem[]`: `src/store/pending-query.ts:28`; `PendingItem` `:7`.
 
 ## Key methods
@@ -43,6 +46,7 @@ Paperplane's own SQLite database at `~/.paperplane/paperplane.db` (better-sqlite
 - `MessagesRepo`: `upsert` `:32`, `softDelete` `:44`, `softDeleteNonChannel` `:51` (returns affected chat ids), `softDeleteAll` `:64`, `history` `:68`, `latestAlive` `:79`, `oldestStored` `:86` (includes deleted rows), `search` `:91`, `count` `:102`.
 - `CursorsRepo`: `get` `:12` (null when no cursor), `set` `:19` (upsert on `chat_id`). Holds `oldestSyncedMsgId` and `backfillComplete` for backfill; `ChatsRepo.purge` deletes it.
 - `LabelsRepo`: `set` `:17` (upsert via ON CONFLICT), `get` `:27`, `clear` `:32`.
+- `AuditRepo`: `record` `:7`, `recent` `:11` (newest first). `CleanupPlansRepo`: `insert` `:25`, `get` `:34` (parses criteria/items JSON), `markApplied` `:50` (atomic `draft` -> `applied`, returns false if already applied).
 - `listPending`: SQL at `pending-query.ts:16`; keeps only rows whose `effectiveStatus` is `pending`/`seen`, sorts `full` watch level first, then by `waitingSinceSec` ascending (longest wait first), then applies `limit`. `waiting_since` = oldest alive incoming message after my last alive outgoing message, falling back to `top_msg_date` when no history is stored.
 
 ## Dependencies

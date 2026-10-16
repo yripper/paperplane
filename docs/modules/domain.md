@@ -2,20 +2,20 @@
 
 > **Living document.** Read this before modifying the module. Update it in the same change whenever the module's behavior, public surface, files, or dependencies change.
 
-**Source:** `src/domain/` · **Last verified:** 2026-10-16 (`errors.ts` (incl. `describeError`), `peer-ids.ts`, `pending.ts` and `rate-limiter.ts` implemented; rest planned)
+**Source:** `src/domain/` · **Last verified:** 2026-10-16 (all files implemented)
 
 ## Purpose
 
 Pure logic with no I/O: pending status, label precedence/reset rules, cleanup selection criteria and rate limiting. This is the easiest place to get product behavior wrong, so it gets the densest tests.
 
-## Structure (planned)
+## Structure
 
 | File | Purpose |
 |---|---|
 | `errors.ts` | `AppError` + `ErrorCode`: the one error type crossing module boundaries (`src/domain/errors.ts:13`); `describeError` (`:26`) formats any thrown value for logs |
 | `peer-ids.ts` | `isChannelId`: marked-id classification (`src/domain/peer-ids.ts:3`) |
 | `pending.ts` | Auto status (pending/seen/clear) + label precedence (`src/domain/pending.ts:15`, `:20`, `:28`) |
-| `cleanup-criteria.ts` | Selects chats for `cleanup_plan` |
+| `cleanup-criteria.ts` | Selects chats for `cleanup_plan` (`src/domain/cleanup-criteria.ts:18`, `:32`) |
 | `rate-limiter.ts` | Sliding-window `RateLimiter` and per-key `PerKeyGap` (`src/domain/rate-limiter.ts:6`, `:27`) |
 
 ## Public surface
@@ -30,6 +30,9 @@ Pure logic with no I/O: pending status, label precedence/reset rules, cleanup se
 - `class RateLimiter`: `src/domain/rate-limiter.ts:6`. `new RateLimiter(maxPerWindow, windowMs, now = Date.now)`; `tryAcquire(): Acquire` at `:15`. Sliding window: at most `maxPerWindow` accepted hits per `windowMs`.
 - `class PerKeyGap`: `src/domain/rate-limiter.ts:27`. `new PerKeyGap(gapMs, now = Date.now)`; `tryAcquire(key: number): Acquire` at `:35`. Minimum gap of `gapMs` per key, independent across keys.
 - Type `Acquire` `src/domain/rate-limiter.ts:1`: `{ ok: true } | { ok: false; retryAfterMs: number }`.
+- `selectForCleanup(chats, c, nowSec): ChatRow[]`: `src/domain/cleanup-criteria.ts:18`. Criteria combine with AND; `full` watch-level chats are never selected. `mutedOnly` matches `muted` flag or `muted` watch level.
+- `cleanupActionFor(type, mode): CleanupAction`: `:32`. `archive` mode always archives; `remove` deletes user/bot chats and leaves groups/channels.
+- Types `CleanupCriteria` `:3`, `CleanupMode` `:11`, `CleanupAction` `:12`.
 
 ## Key methods
 
