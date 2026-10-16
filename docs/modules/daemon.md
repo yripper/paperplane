@@ -41,7 +41,7 @@ Consumes config, secrets, store, sync, telegram, actions and mcp modules; `pino`
 
 ## Gotchas & invariants
 
-- The lock is shared by the daemon, `login` and `logout` (`src/daemon/daemon.ts:36`, `src/cli.ts:38`, `src/cli.ts:71`): two processes on one Telegram session cause AUTH_KEY_DUPLICATED. A lock left by a crashed process is taken over when its PID is dead.
+- The lock is shared by the daemon, `login` and `logout` (`src/daemon/daemon.ts:50`, `src/cli.ts:38`, `src/cli.ts:72`): two processes on one Telegram session cause AUTH_KEY_DUPLICATED. A lock left by a crashed process is taken over when its PID is dead.
 - The daemon never prompts and never exits for lack of credentials (pm2 would crash-loop). With no apiId, no api_hash, or `session.connect()` returning `auth_required`, it stays up in `auth_required`: it opens the DB, serves HTTP (so `status` and local reads work), uses the unauthenticated gateway for tool deps and does not start the sweep loop (`src/daemon/daemon.ts:105-135`). A revoked session found mid-sweep stops syncing the same way (`src/daemon/daemon.ts:141`).
 - Re-login needs `pm2 restart paperplane`; the running daemon does not pick up a new session.
 - The first sweep runs in the background through the loop's `immediate` option (`src/daemon/daemon.ts:156`), so it shares the in-flight guard and cannot overlap the next tick; it takes minutes with thousands of dialogs and seeds mtcute's peer cache.
