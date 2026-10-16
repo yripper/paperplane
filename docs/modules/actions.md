@@ -32,9 +32,10 @@ All actions take `d: ActionDeps` first and a single input object.
 
 ## Key methods
 
-- `sendMessage`: validates the chat, takes the per-chat gap then the global send slot, sends, and immediately stores the returned message via `sink.onMessage(..., { sentViaPaperplane: true })` so pending status reflects the reply before the live update.
+- `sendMessage`: validates the chat, takes the per-chat gap then the global send slot, and sends (the audited part, `messaging.ts:8`). It then stores the returned message via `sink.onMessage(..., { sentViaPaperplane: true })` (`:13`) so pending status reflects the reply before the live update. A store failure is caught and audited as `send_message.store` (error); the sent message is still returned.
 - `deleteChat` modes: `delete` and `revoke` purge the chat locally; `clear` soft-deletes all messages and resets the top (`setTop(..., 0, ...)`).
-- `applyCleanupPlan`: claims the plan with `markApplied` first, then in `remove` mode runs items one by one through the destructive limiter; `archive` mode is a single gateway call.
+- `createCleanupPlan` requires a narrowing criterion (`inactiveDays`, non-empty `types`, `minUnread`, `mutedOnly: true`, `archivedOnly: true`); `false`/empty values are rejected (`cleanup.ts:16-22`).
+- `applyCleanupPlan` (`cleanup.ts:55`): re-reads each item with `recheck` (`:34`): missing chat -> `failed` `NOT_FOUND`, now `full` -> `failed` `FORBIDDEN`, no Telegram call or limiter slot. `remove` mode claims the plan with `markApplied`, then runs items one by one through the destructive limiter. `archive` mode re-checks, takes one limiter slot before `markApplied` (rate limit throws `RATE_LIMITED`, plan stays a draft), then makes one gateway call; a gateway error is returned as `failed` for every id, not thrown. If nothing is left to archive there is no call and no slot, but the plan is still marked applied.
 
 ## Dependencies
 
@@ -49,6 +50,8 @@ All actions take `d: ActionDeps` first and a single input object.
 - On rate limit mid-cleanup the rest are reported as `skipped`; after a `FLOOD_WAIT` failure the remaining items are also skipped.
 - FLOOD_WAIT goes back to the caller with the wait time; actions never sleep through long waits silently.
 - Audit entries are metadata only (action name, chat id, outcome); never message text or titles. `blockUser` records the user id in the chat id column.
+- Sends to muted chats store no message row (the sink skips muted chats), but the chat top is still bumped.
+- A cleanup plan can go stale: apply re-validates every chat against the store.
 - Local state is updated only after Telegram succeeds (archive, mute, mark read, purge).
 - The per-chat gap is consumed even if the global send limit then rejects.
 

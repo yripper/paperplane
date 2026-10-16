@@ -25,6 +25,12 @@ describe('createCleanupPlan', () => {
   it('requires at least one criterion', () => {
     expect(() => createCleanupPlan(t.deps, {}, 'remove')).toThrow(AppError);
   });
+
+  it('rejects criteria that narrow nothing', () => {
+    expect(() => createCleanupPlan(t.deps, { mutedOnly: false }, 'remove')).toThrow(AppError);
+    expect(() => createCleanupPlan(t.deps, { archivedOnly: false }, 'remove')).toThrow(AppError);
+    expect(() => createCleanupPlan(t.deps, { types: [] }, 'remove')).toThrow(AppError);
+  });
 });
 
 describe('applyCleanupPlan', () => {
@@ -75,5 +81,56 @@ describe('applyCleanupPlan', () => {
     expect(t.gateway.callsTo('archive')).toEqual([[[10, -1001]]]);
     expect(report.done).toEqual([10, -1001]);
     expect(t.store.chats.get(10)?.archived).toBe(true);
+  });
+
+  it('leaves an archive plan re-appliable when rate limited', async () => {
+    const limited = makeActionDeps({ destructivePerMinute: 1 });
+    limited.store.chats.ensure({ id: 1, type: 'user', title: 'Chat 1', username: null }, 'normal', 0);
+    const plan = createCleanupPlan(limited.deps, { inactiveDays: 30 }, 'archive');
+    expect(limited.deps.limits.destructive.tryAcquire().ok).toBe(true);
+    await expect(applyCleanupPlan(limited.deps, plan.id)).rejects.toMatchObject({ code: 'RATE_LIMITED' });
+    expect(limited.deps.plans.get(plan.id)?.status).toBe('draft');
+    limited.clock.ms += 61_000;
+    expect((await applyCleanupPlan(limited.deps, plan.id)).done).toEqual([1]);
+  });
+
+  it('reports an archive gateway failure instead of throwing', async () => {
+    t.gateway.failOn.set('archive', new AppError('FORBIDDEN', 'nope'));
+    const plan = createCleanupPlan(t.deps, { inactiveDays: 30 }, 'archive');
+    const report = await applyCleanupPlan(t.deps, plan.id);
+    expect(report).toEqual({
+      done: [],
+      failed: [{ chatId: 10, code: 'FORBIDDEN' }, { chatId: -1001, code: 'FORBIDDEN' }],
+      skipped: [],
+    });
+  });
+
+  it('makes no gateway call when everything is excluded', async () => {
+    const plan = createCleanupPlan(t.deps, { inactiveDays: 30 }, 'archive');
+    const report = await applyCleanupPlan(t.deps, plan.id, [10, -1001]);
+    expect(report).toEqual({ done: [], failed: [], skipped: [] });
+    expect(t.gateway.callsTo('archive')).toHaveLength(0);
+    expect(t.deps.plans.get(plan.id)?.status).toBe('applied');
+  });
+
+  it('re-checks items: missing chats fail NOT_FOUND, newly full chats FORBIDDEN, with no Telegram call', async () => {
+    const plan = createCleanupPlan(t.deps, { inactiveDays: 30 }, 'remove');
+    t.store.chats.purge(10);
+    t.store.chats.setWatchLevel(-1001, 'full', 0);
+    const report = await applyCleanupPlan(t.deps, plan.id);
+    expect(report).toEqual({
+      done: [],
+      failed: [{ chatId: 10, code: 'NOT_FOUND' }, { chatId: -1001, code: 'FORBIDDEN' }],
+      skipped: [],
+    });
+    expect(t.gateway.calls).toHaveLength(0);
+  });
+
+  it('filters re-check failures out of the archive call', async () => {
+    const plan = createCleanupPlan(t.deps, { inactiveDays: 30 }, 'archive');
+    t.store.chats.purge(10);
+    const report = await applyCleanupPlan(t.deps, plan.id);
+    expect(t.gateway.callsTo('archive')).toEqual([[[-1001]]]);
+    expect(report).toEqual({ done: [-1001], failed: [{ chatId: 10, code: 'NOT_FOUND' }], skipped: [] });
   });
 });

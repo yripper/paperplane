@@ -42,6 +42,18 @@ describe('sendMessage', () => {
     expect(t.gateway.callsTo('sendText')).toHaveLength(0);
   });
 
+  it('still returns the sent message when storing it fails', async () => {
+    t.deps.sink.onMessage = (): void => {
+      throw new Error('db down');
+    };
+    const sent = await sendMessage(t.deps, { chatId: 10, text: 'x' });
+    expect(sent.text).toBe('x');
+    expect(t.audit.recent(2).map((e) => [e.action, e.outcome])).toEqual([
+      ['send_message.store', 'error'],
+      ['send_message', 'ok'],
+    ]);
+  });
+
   it('audits failures and rethrows', async () => {
     t.gateway.failOn.set('sendText', new Error('boom'));
     await expect(sendMessage(t.deps, { chatId: 10, text: 'x' })).rejects.toThrow('boom');

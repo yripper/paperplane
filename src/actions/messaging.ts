@@ -5,13 +5,17 @@ export async function sendMessage(d: ActionDeps, input: { chatId: number; text: 
   requireChat(d, input.chatId);
   acquire(d.limits.chatGap.tryAcquire(input.chatId));
   acquire(d.limits.sends.tryAcquire());
-  return audited(d, 'send_message', input.chatId, async () => {
-    const sent = await d.gateway.sendText(input.chatId, input.text, input.replyTo);
-    // Store what Telegram returned right away, so get_pending reflects the
-    // reply even before the live update for it arrives.
+  const sent = await audited(d, 'send_message', input.chatId, () => d.gateway.sendText(input.chatId, input.text, input.replyTo));
+  // The message is already out, so a store failure must not look like a failed
+  // send (that invites a duplicate); the sweep reconciles it later. Storing it
+  // right away lets get_pending reflect the reply before the live update.
+  // Muted chats store no row: the sink skips them.
+  try {
     d.sink.onMessage(sent, { live: true, sentViaPaperplane: true });
-    return sent;
-  });
+  } catch {
+    d.audit.record('send_message.store', input.chatId, 'error', d.now());
+  }
+  return sent;
 }
 
 export async function saveDraft(d: ActionDeps, input: { chatId: number; text: string }): Promise<void> {
