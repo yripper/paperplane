@@ -6,6 +6,15 @@ import type { DeleteMode, TelegramGateway, TgDialog, TgFolder, TgMessage } from 
 
 // INT32_MAX: Telegram's conventional "muted forever".
 const MUTE_FOREVER = 2_147_483_647;
+/// Telegram deletes long histories in chunks (affectedHistory.offset > 0 means
+/// "call again"); the cap only guards against a server that never reaches 0.
+export const DELETE_HISTORY_MAX_CALLS = 200;
+
+/// Same container mtcute's private createDummyUpdate builds
+/// (@mtcute/core highlevel/updates/utils.js:50-69), which isn't exported.
+function dummyUpdate(pts: number, ptsCount: number, channelId: number): tl.TypeUpdates {
+  return { _: 'updates', seq: 0, date: 0, chats: [], users: [], updates: [{ _: 'mtcute.dummyUpdate', channelId, pts, ptsCount }] };
+}
 
 function peerIdOf(p: tl.TypeInputPeer): number | null {
   try {
@@ -137,8 +146,23 @@ export class MtcuteGateway implements TelegramGateway {
     });
   }
 
+  /// mtcute's deleteHistory makes a single messages.deleteHistory call and
+  /// ignores affectedHistory.offset, leaving long chats half-deleted. This
+  /// repeats the raw call (same params as delete-history.js:5-13) until the
+  /// offset reaches 0, feeding each result's pts to the update loop the way
+  /// mtcute does (delete-history.js:14-18) so it doesn't see a pts gap.
   deleteChat(chatId: number, mode: DeleteMode): Promise<void> {
-    return this.guard(() => this.tg.deleteHistory(chatId, { mode }));
+    return this.guard(async () => {
+      const peer = await this.tg.resolvePeer(chatId);
+      // isInputPeerChannel (highlevel/utils/peer-utils.js:113) isn't exported from @mtcute/node.
+      const channelId = peer._ === 'inputPeerChannel' || peer._ === 'inputPeerChannelFromMessage' ? peer.channelId : 0;
+      for (let i = 0; i < DELETE_HISTORY_MAX_CALLS; i++) {
+        const res = await this.tg.call({ _: 'messages.deleteHistory', justClear: mode === 'clear', revoke: mode === 'revoke', peer, maxId: 0 });
+        this.tg.handleClientUpdate(dummyUpdate(res.pts, res.ptsCount, channelId));
+        if (res.offset <= 0) return;
+      }
+      throw new AppError('INTERNAL', `history deletion did not finish after ${DELETE_HISTORY_MAX_CALLS} calls`);
+    });
   }
 
   leaveChat(chatId: number): Promise<void> {
