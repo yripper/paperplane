@@ -9,6 +9,8 @@ module.exports = {
       autorestart: true,
       max_restarts: 10,
       restart_delay: 5000,
+      // A start that dies within 10s (held lock, bad config) counts against max_restarts.
+      min_uptime: '10s',
       // Time for mtcute to close its storage cleanly; an unclean close makes
       // catchUp replay duplicate updates on the next start.
       kill_timeout: 10000,
