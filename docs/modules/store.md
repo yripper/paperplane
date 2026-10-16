@@ -60,7 +60,7 @@ Paperplane's own SQLite database at `~/.paperplane/paperplane.db` (better-sqlite
 - All timestamps are unix seconds.
 - Separate from mtcute's own `mtcute.db`. Never read or write mtcute's tables.
 - The audit log stores metadata only. Never message text or secrets.
-- `sent_via_paperplane` must never be downgraded on re-upsert (a later live update for the same message reports it as a normal outgoing message). `MessagesRepo.upsert` enforces it with `MAX(...)` (`messages-repo.ts:37-41`).
+- `sent_via_paperplane` must never be downgraded on re-upsert (a later live update for the same message reports it as a normal outgoing message). `MessagesRepo.upsert` enforces it with `MAX(...)` (`messages-repo.ts:39`).
 - Upserts must use `ON CONFLICT ... DO UPDATE`, never `INSERT OR REPLACE`: REPLACE deletes the old row without firing the FTS delete trigger (`recursive_triggers` is off), leaving stale `messages_fts` rows.
 - Soft-deleted messages stay in `messages_fts`, so every read must filter `deleted_at IS NULL` (`history`, `latestAlive`, `search` do).
 - `bumpTop` and read positions (`setReadInbox`, `setReadOutbox`, `applySnapshot`) are monotonic: late duplicates must not roll them back. Use `setTop` for the unconditional case (top message deleted).

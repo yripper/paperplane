@@ -19,7 +19,7 @@ macOS Keychain access through the built-in `security` CLI: api_hash, bearer toke
 ## Public surface
 
 - `SecretStore` interface (`keychain.ts:4`): `get` (null when missing), `set`, `delete`.
-- `CommandRunner` interface (`keychain.ts:9`): runs `/usr/bin/security` with args and optional stdin, returns `{ code, stdout, stderr }`.
+- `CommandRunner` interface (`keychain.ts:10`): runs `/usr/bin/security` with args and optional stdin, returns `{ code, stdout, stderr }`.
 - `securityCli` (`keychain.ts:23`): the real `CommandRunner` (spawns `/usr/bin/security`).
 - `Keychain` class (`keychain.ts:41`): `new Keychain(runner?, service?)`, service defaults to `paperplane`.
 - `SECRET_ACCOUNTS` (`keychain.ts:14`): `apiHash` = `api_hash`, `bearerToken` = `bearer_token`.

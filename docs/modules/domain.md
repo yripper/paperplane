@@ -51,4 +51,4 @@ Store imports of domain must stay pure functions; domain imports from store are 
 
 ## Testing
 
-`pnpm test src/domain`: `peer-ids.test.ts`, `pending.test.ts` (status derivation, label override, snooze expiry, reset rule), `rate-limiter.test.ts` (window capacity and `retryAfterMs`, window sliding, rejected attempts not recorded, per-key gap independence).
+`pnpm test src/domain`: `peer-ids.test.ts`, `cleanup-criteria.test.ts`, `pending.test.ts` (status derivation, label override, snooze expiry, reset rule), `rate-limiter.test.ts` (window capacity and `retryAfterMs`, window sliding, rejected attempts not recorded, per-key gap independence).

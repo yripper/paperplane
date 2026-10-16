@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "Local MCP server that connects Claude to your personal Telegram account",
   "license": "MIT",
+  "packageManager": "pnpm@12.11.2",
   "type": "module",
   "bin": {
     "paperplane": "dist/cli.js"

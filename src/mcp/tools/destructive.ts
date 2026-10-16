@@ -70,7 +70,7 @@ export function registerDestructiveTools(server: McpServer, d: ToolDeps): void {
   server.registerTool(
     'cleanup_apply',
     {
-      description: 'Step 2 of bulk cleanup: execute a plan from cleanup_plan, minus exclude_chat_ids. Single-use. Only call after the user approved the list. Returns {done, failed, skipped}: each failed entry has a code (NOT_FOUND = the chat is gone, FORBIDDEN = it was promoted to full watch since planning, otherwise the error code of the Telegram call); skipped = not attempted because of a rate limit or flood wait, so plan again for those.',
+      description: 'Step 2 of bulk cleanup: execute a plan from cleanup_plan, minus exclude_chat_ids. Single-use. Only call after the user approved the list. Returns {done, failed, skipped}: each failed entry has a code (NOT_FOUND = the chat is gone, FORBIDDEN = it was promoted to full watch since planning, otherwise the error code of the Telegram call); skipped = not attempted because of a rate limit or flood wait in remove mode, so plan again for those. Archive mode is one call: a rate limit rejects it with RATE_LIMITED and the plan stays usable, and skipped is always empty.',
       inputSchema: { plan_id: z.string().min(1).max(64), exclude_chat_ids: z.array(z.number().int()).max(1000).optional() },
       annotations: DESTRUCTIVE,
     },

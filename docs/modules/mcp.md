@@ -45,7 +45,7 @@ The MCP server Claude talks to: Streamable HTTP on `127.0.0.1`, bearer-token aut
 | `leave_chat` | destructive | D | Leave group or channel |
 | `block_user` | destructive | D | Block user |
 | `cleanup_plan` | destructive | R | Step 1: list matches, no side effects (needs >= 1 criterion) |
-| `cleanup_apply` | destructive | D | Step 2: execute plan minus exclusions |
+| `cleanup_apply` | destructive | D | Step 2: execute plan minus exclusions; returns `{done, failed, skipped}` (`skipped` only in remove mode) |
 
 Errors come back as `isError: true` with text `CODE: message` (plus `(retry after Ns)`). Invalid arguments are rejected by the SDK's zod validation before any handler runs.
 
@@ -70,8 +70,9 @@ Errors come back as `isError: true` with text `CODE: message` (plus `(retry afte
 - Tool annotations (`readOnlyHint`, `destructiveHint`) are hints only. The real safety is that write tools are never allowlisted in the Claude permission settings.
 
 - Tool descriptions carry the "show the user and get approval first" instructions for write tools; they are the only place Claude is told that.
+- `cleanup_apply` reports `skipped` only for `remove` plans; an `archive` plan is a single call and a rate limit rejects it with `RATE_LIMITED` (the tool description says so, `src/mcp/tools/destructive.ts:73`).
 - `cleanup_plan` is annotated read-only on purpose: it only stores a draft, so it is safe to allowlist. `cleanup_apply` is the destructive step.
 
 ## Testing
 
-`src/mcp/http.test.ts` binds port 0 on `127.0.0.1` and covers 401 without token, 403 foreign Host, 404 other path, 405 GET, a real `initialize` round trip, and the `tokenMatches` / `hostAllowed` helpers. `src/mcp/server.test.ts` uses an in-memory MCP client (`connect` and `makeToolDeps` in `src/testing/tool-deps.ts`) against `FakeGateway` and an in-memory store. It covers: the tool list and annotations, `get_pending`, `read_history`, `search_messages`, `send_message` (success, empty text, `AUTH_REQUIRED`, `FLOOD_WAIT`, plain `Error` as `INTERNAL`), `delete_chat` revoke without confirmation, `set_label` and `clear_label`, `cleanup_plan` (including rejection of criteria that narrow nothing) and `cleanup_apply`, and oversized-input rejection. Not covered: `status`, `list_chats`, `get_chat_info`, `set_watch_level`, `save_draft`, `mark_read`, the folder tools, archive/mute tools, `leave_chat`, `block_user`. `src/mcp/format.test.ts` covers `formatMessage`.
+`src/mcp/http.test.ts` binds port 0 on `127.0.0.1` and covers 401 without token, 403 foreign Host, 404 other path, 405 GET, a real `initialize` round trip, and the `tokenMatches` / `hostAllowed` helpers. `src/mcp/server.test.ts` uses an in-memory MCP client (`connect` and `makeToolDeps` in `src/testing/tool-deps.ts`) against `FakeGateway` and an in-memory store. It covers: the tool list and annotations, `get_pending`, `read_history`, `search_messages`, `send_message` (success, empty text, `AUTH_REQUIRED`, `FLOOD_WAIT`, plain `Error` as `INTERNAL`), `delete_chat` revoke without confirmation, `set_label` (snooze validation, done hides the chat) and `clear_label` (only the `NOT_FOUND` path for an unknown chat), `cleanup_plan` (including rejection of criteria that narrow nothing) and `cleanup_apply`, and oversized-input rejection. Not covered: `status`, `list_chats`, `get_chat_info`, `set_watch_level`, `save_draft`, `mark_read`, the folder tools, archive/mute tools, `leave_chat`, `block_user`. `src/mcp/format.test.ts` covers `formatMessage`.
