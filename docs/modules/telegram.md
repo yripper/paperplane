@@ -2,23 +2,26 @@
 
 > **Living document.** Read this before modifying the module. Update it in the same change whenever the module's behavior, public surface, files, or dependencies change.
 
-**Source:** `src/telegram/` · **Last verified:** 2026-10-16 (partially implemented: `keychain-auth-keys.ts` exists; other files are planned)
+**Source:** `src/telegram/` · **Last verified:** 2026-10-16 (partially implemented: `types.ts` and `keychain-auth-keys.ts` exist; other files are planned)
 
 ## Purpose
 
 The only module that imports mtcute. Owns the MTProto user client (login, live updates, catch-up), a Keychain-backed auth-key store, and the `TelegramGateway` adapter that converts mtcute types into plain Paperplane types and mtcute errors into `AppError`s. If this breaks, nothing syncs and no action reaches Telegram.
 
-## Structure (`keychain-auth-keys.ts` implemented, rest planned)
+## Structure (`types.ts` and `keychain-auth-keys.ts` implemented, rest planned)
 
 | File | Purpose |
 |---|---|
 | `client.ts` | Builds the `TelegramClient` with composite storage and log redirection |
 | `keychain-auth-keys.ts` | mtcute auth-key repository backed by macOS Keychain |
 | `adapt.ts` | mtcute `Message`/`Dialog`/`Peer` → plain `Tg*` types |
-| `gateway.ts` | `TelegramGateway` interface + mtcute implementation, error mapping |
+| `types.ts` | Plain `Tg*` types and the `TelegramGateway` interface (no mtcute import) |
+| `gateway.ts` | mtcute implementation of `TelegramGateway`, error mapping |
 
 ## Public surface
 
+- `TelegramGateway` (`src/telegram/types.ts:56`): the module's contract. Everything outside `src/telegram` uses it, never mtcute. `getHistory` returns newest first. Test double: `FakeGateway` (`src/testing/fake-gateway.ts`).
+- Plain types (`types.ts:3-51`): `TgPeer`, `TgMessage`, `TgDialog`, `TgFolder`, `TgDeleteEvent`, `TgReadEvent`, `DeleteMode`.
 - `KeychainAuthKeys` (`src/telegram/keychain-auth-keys.ts:13`): `IAuthKeysRepository` implementation, constructed as `new KeychainAuthKeys(secrets: SecretStore)`.
 
 ## Key methods
@@ -44,6 +47,7 @@ The only module that imports mtcute. Owns the MTProto user client (login, live u
 - There's no high-level mute method; use the raw `account.updateNotifySettings` call with `inputNotifyPeer` and `inputPeerNotifySettings.muteUntil`.
 - mtcute retries FLOOD_WAIT up to `maxWait` 10s / 5 retries by default. Above that it throws `tl.RpcError` (`code 420`, wait time in `.seconds`), which the gateway maps to `AppError('FLOOD_WAIT')`.
 - Temp (PFS) auth keys are memory-only and never reach Keychain; mtcute re-negotiates them after a restart. `deleteAll` only clears DCs 1-5, since Keychain items can't be enumerated cheaply. Keychain values must match `[A-Za-z0-9+/=_.:-]`; standard base64 does.
+- `types.ts` must stay free of mtcute imports; it only depends on `ChatType` from the store types.
 - Never log message content. mtcute's log handler is redirected and must drop the `args`.
 
 ## Testing
