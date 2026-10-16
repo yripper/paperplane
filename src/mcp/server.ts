@@ -27,8 +27,8 @@ export interface ToolDeps {
   status: () => StatusReport;
 }
 
-export function buildServer(deps: ToolDeps): McpServer {
-  const server = new McpServer({ name: 'paperplane', version: '0.1.0' });
+export function buildServer(deps: ToolDeps, instructions: string): McpServer {
+  const server = new McpServer({ name: 'paperplane', version: '0.1.0' }, { instructions });
   registerReadTools(server, deps);
   registerTrackingTools(server, deps);
   registerMessagingTools(server, deps);

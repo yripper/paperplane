@@ -16,6 +16,7 @@ describe('resolvePaths', () => {
       db: '/x/pp/paperplane.db',
       mtcuteDb: '/x/pp/mtcute.db',
       lock: '/x/pp/paperplane.lock',
+      style: '/x/pp/style.md',
     });
   });
 });

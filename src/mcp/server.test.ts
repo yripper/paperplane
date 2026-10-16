@@ -1,6 +1,7 @@
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { AppError } from '../domain/errors.js';
+import { BASE_INSTRUCTIONS } from './instructions.js';
 import { connect, makeToolDeps } from '../testing/tool-deps.js';
 import { tgMessage } from '../testing/fixtures.js';
 
@@ -38,6 +39,10 @@ describe('MCP tools', () => {
     for (const name of ['status', 'list_chats', 'get_pending', 'read_history', 'search_messages', 'get_chat_info']) {
       expect(byName.get(name)?.annotations?.readOnlyHint).toBe(true);
     }
+  });
+
+  it('sends the usage instructions on initialize', async () => {
+    expect(client.getInstructions()).toBe(BASE_INSTRUCTIONS);
   });
 
   it('get_pending returns chats waiting on me', async () => {

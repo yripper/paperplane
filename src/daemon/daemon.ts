@@ -5,6 +5,7 @@ import { type AppPaths, ensureHome, resolvePaths } from '../config/paths.js';
 import { AppError, describeError } from '../domain/errors.js';
 import { PerKeyGap, RateLimiter } from '../domain/rate-limiter.js';
 import { startHttpServer } from '../mcp/http.js';
+import { buildInstructions, readStyleGuide } from '../mcp/instructions.js';
 import { buildServer, type StatusReport } from '../mcp/server.js';
 import { Keychain, SECRET_ACCOUNTS, type SecretStore } from '../secrets/keychain.js';
 import { AuditRepo } from '../store/audit-repo.js';
@@ -176,7 +177,8 @@ async function runDaemon(secrets: SecretStore, log: Logger, paths: AppPaths, con
     port: config.port,
     token,
     log: (l) => log.warn(l),
-    buildServer: () => buildServer({ actions, db, labels, backfill, status }),
+    // style.md is re-read per request so edits apply without a restart.
+    buildServer: () => buildServer({ actions, db, labels, backfill, status }, buildInstructions(readStyleGuide(paths.style))),
   });
   res.http = http;
   log.info(`paperplane listening on http://127.0.0.1:${http.port}/mcp (telegram auth: ${state.auth})`);

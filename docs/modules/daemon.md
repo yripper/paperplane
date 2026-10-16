@@ -2,7 +2,7 @@
 
 > **Living document.** Read this before modifying the module. Update it in the same change whenever the module's behavior, public surface, files, or dependencies change.
 
-**Source:** `src/daemon/` + `src/cli.ts` · **Last verified:** 2026-10-16
+**Source:** `src/daemon/` + `src/cli.ts` · **Last verified:** 2026-10-16 (server instructions with `style.md`)
 
 ## Purpose
 
@@ -47,6 +47,7 @@ Consumes config, secrets, store, sync, telegram, actions and mcp modules; `pino`
 
 ## Gotchas & invariants
 
+- MCP server instructions are rebuilt per request with `~/.paperplane/style.md` (`src/daemon/daemon.ts:181`), so editing the style guide needs no restart.
 - The lock is shared by the daemon, `login` and `logout` (`src/daemon/daemon.ts:61`, `src/cli.ts:39`, `src/cli.ts:78`): two processes on one Telegram session cause AUTH_KEY_DUPLICATED. A lock left by a crashed process is taken over when its PID is dead.
 - HTTP and the DB come up before Telegram (`src/daemon/daemon.ts:175`): tools never wait on Telegram for reads, and offline mtcute retries a connect forever. `status.auth` is `'connecting'` while the background connect runs (`:128`).
 - Every consumer (`ActionDeps`, `BackfillDeps`, the sweep) gets one switchable gateway (`src/daemon/daemon.ts:131`). Until connected it serves the unauthenticated gateway with `NOT_CONNECTED` (`AUTH_REQUIRED: Telegram not connected yet`; the existing code is reused because the caller's remedy is the same kind of thing). Connect `'ok'` swaps in the real gateway and starts the sweep loop with `immediate: true`; `'auth_required'` swaps to the `NOT_LOGGED_IN` gateway and starts no loop (`:213-229`). Nothing ever calls into an unauthorized mtcute client.

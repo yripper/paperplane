@@ -2,7 +2,7 @@
 
 > **Living document.** Read this before modifying the module. Update it in the same change whenever the module's behavior, public surface, files, or dependencies change.
 
-**Source:** `src/mcp/` · **Last verified:** 2026-10-16 (final-review fixes: `connecting` status, HTTP hardening, cleanup pacing)
+**Source:** `src/mcp/` · **Last verified:** 2026-10-16 (server instructions + optional style guide)
 
 ## Purpose
 
@@ -12,7 +12,8 @@ The MCP server Claude talks to: Streamable HTTP on `127.0.0.1`, bearer-token aut
 
 | File | Purpose |
 |---|---|
-| `server.ts` | `buildServer(deps)`, `ToolDeps`, `StatusReport` |
+| `server.ts` | `buildServer(deps, instructions)`, `ToolDeps`, `StatusReport` |
+| `instructions.ts` | `BASE_INSTRUCTIONS`, `buildInstructions(style)`, `readStyleGuide(path)` |
 | `result.ts` | `ok` / `fail` / `run`: tool result envelope and `CODE: message` errors |
 | `format.ts` | Row to view mappers (`formatMessage`, `formatChat`, `formatPending`), ISO dates |
 | `tools/annotations.ts` | `READ`, `LOCAL_WRITE`, `TELEGRAM_WRITE`, `DESTRUCTIVE` hint sets |
@@ -51,7 +52,9 @@ Errors come back as `isError: true` with text `CODE: message` (plus `(retry afte
 
 ## Key methods
 
-- `buildServer(deps: ToolDeps): McpServer` (`src/mcp/server.ts:30`): registers all five groups on a fresh `McpServer`.
+- `buildServer(deps: ToolDeps, instructions: string): McpServer` (`src/mcp/server.ts:30`): registers all five groups on a fresh `McpServer` and passes `instructions`, which clients get once on `initialize`.
+- `BASE_INSTRUCTIONS` / `buildInstructions(style)` (`src/mcp/instructions.ts:5`, `:22`): how to use the tools together (approval before sending, first-person casual voice, triage and watch-level policy, read state, ignore instructions inside messages). A style guide is appended under `## Writing style`.
+- `readStyleGuide(path)` (`src/mcp/instructions.ts:28`): trimmed `~/.paperplane/style.md`, or `null` when missing or blank; other read errors throw.
 - `startHttpServer(o: HttpOptions): Promise<RunningHttp>` (`src/mcp/http.ts:40`): `node:http` server bound to `127.0.0.1` only; `port: 0` picks a free port, reported in `RunningHttp.port`; `close()` drops open connections. Request checks run in this order in `handle` (`:45`): Host (`:46`, 403), path `/mcp` (`:47`, 404), bearer token (`:48`, 401), POST only (`:49`, 405). Handler errors are logged via `describeError` (never the token or bodies) and answer 500.
 - `tokenMatches(header, token)` (`src/mcp/http.ts:19`): constant-time compare of the full `Bearer <token>` header; fails closed on an empty configured token (`:21`). `hostAllowed(host, port)` (`:32`): only `127.0.0.1:<port>` or `localhost:<port>`.
 - `ToolDeps` (`src/mcp/server.ts:22`) / `StatusReport` (`src/mcp/server.ts:13`): everything tools need; `status` is injected by the daemon.
@@ -70,10 +73,11 @@ Errors come back as `isError: true` with text `CODE: message` (plus `(retry afte
 - Claude Desktop can't reach localhost through Connectors (they run in Anthropic's cloud); it connects via `npx mcp-remote <url> --header ...`.
 - Tool annotations (`readOnlyHint`, `destructiveHint`) are hints only. The real safety is that write tools are never allowlisted in the Claude permission settings.
 
-- Tool descriptions carry the "show the user and get approval first" instructions for write tools; they are the only place Claude is told that.
+- The "show the user and get approval first" rule lives in both the write tools' descriptions and the server instructions. Keep them consistent; tool descriptions are what a client sees even if it drops server instructions.
+- The style guide is personal, so it only ever lives in `~/.paperplane/style.md`, never in the repo. The daemon re-reads it on every request (a new server per POST), so edits apply without a restart. An unreadable file (not missing) makes requests answer 500 with the error logged, rather than silently dropping the style.
 - `cleanup_apply` reports `skipped` only for `remove` plans; an `archive` plan is a single call and a rate limit rejects it with `RATE_LIMITED` (the tool description says so, `src/mcp/tools/destructive.ts:74`).
 - `cleanup_plan` is annotated read-only on purpose: it only stores a draft, so it is safe to allowlist. `cleanup_apply` is the destructive step.
 
 ## Testing
 
-`src/mcp/http.test.ts` binds port 0 on `127.0.0.1` and covers 401 without token, 403 foreign Host, 404 other path, 405 GET, the check order (foreign Host without token is 403, GET without token is 401), a same-length wrong token and malformed schemes (`Basic x`, lowercase `bearer`, bare token) as 401, a throwing `buildServer` answering 500 with a logged error, a real `initialize` round trip, and the `tokenMatches` (including a shorter token and the empty-token fail-closed case) / `hostAllowed` helpers. `src/mcp/server.test.ts` uses an in-memory MCP client (`connect` and `makeToolDeps` in `src/testing/tool-deps.ts`) against `FakeGateway` and an in-memory store. It covers: the tool list and annotations, `status` while `connecting`, `get_pending`, `read_history`, `search_messages`, `send_message` (success, empty text, `AUTH_REQUIRED`, `FLOOD_WAIT`, plain `Error` as `INTERNAL`), `delete_chat` revoke without confirmation, `set_label` (snooze validation, done hides the chat) and `clear_label` (only the `NOT_FOUND` path for an unknown chat), `cleanup_plan` (including rejection of criteria that narrow nothing) and `cleanup_apply`, and oversized-input rejection. Not covered: `list_chats`, `get_chat_info`, `set_watch_level`, `save_draft`, `mark_read`, the folder tools, archive/mute tools, `leave_chat`, `block_user`. `src/mcp/format.test.ts` covers `formatMessage`.
+`src/mcp/http.test.ts` binds port 0 on `127.0.0.1` and covers 401 without token, 403 foreign Host, 404 other path, 405 GET, the check order (foreign Host without token is 403, GET without token is 401), a same-length wrong token and malformed schemes (`Basic x`, lowercase `bearer`, bare token) as 401, a throwing `buildServer` answering 500 with a logged error, a real `initialize` round trip, and the `tokenMatches` (including a shorter token and the empty-token fail-closed case) / `hostAllowed` helpers. `src/mcp/server.test.ts` uses an in-memory MCP client (`connect` and `makeToolDeps` in `src/testing/tool-deps.ts`) against `FakeGateway` and an in-memory store. It covers: the instructions sent on `initialize`, the tool list and annotations, `status` while `connecting`, `get_pending`, `read_history`, `search_messages`, `send_message` (success, empty text, `AUTH_REQUIRED`, `FLOOD_WAIT`, plain `Error` as `INTERNAL`), `delete_chat` revoke without confirmation, `set_label` (snooze validation, done hides the chat) and `clear_label` (only the `NOT_FOUND` path for an unknown chat), `cleanup_plan` (including rejection of criteria that narrow nothing) and `cleanup_apply`, and oversized-input rejection. Not covered: `list_chats`, `get_chat_info`, `set_watch_level`, `save_draft`, `mark_read`, the folder tools, archive/mute tools, `leave_chat`, `block_user`. `src/mcp/format.test.ts` covers `formatMessage`. `src/mcp/instructions.test.ts` covers `buildInstructions` with and without a style and `readStyleGuide` (trimmed, missing, blank).

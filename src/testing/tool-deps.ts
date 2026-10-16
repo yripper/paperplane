@@ -1,5 +1,6 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { buildInstructions } from '../mcp/instructions.js';
 import { buildServer, type ToolDeps } from '../mcp/server.js';
 import { makeActionDeps } from './action-deps.js';
 
@@ -18,6 +19,6 @@ export function makeToolDeps(): { deps: ToolDeps; t: ReturnType<typeof makeActio
 export async function connect(deps: ToolDeps): Promise<Client> {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: 'test', version: '1.0.0' });
-  await Promise.all([buildServer(deps).connect(serverTransport), client.connect(clientTransport)]);
+  await Promise.all([buildServer(deps, buildInstructions(null)).connect(serverTransport), client.connect(clientTransport)]);
   return client;
 }
