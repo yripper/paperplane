@@ -18,6 +18,17 @@ const status = (chatId: number): string => {
 };
 
 describe('UpdateSink.onMessage', () => {
+  it('stores who sent the message', () => {
+    sink.onMessage(tgMessage({ id: 5, chat: peer({ id: 30, type: 'supergroup', title: 'Group' }), sender: { id: 20, name: 'Bob Example', username: 'bob_example', isBot: false } }));
+    expect(store.senders.getMany([20]).get(20)).toMatchObject({ name: 'Bob Example', username: 'bob_example', updatedAt: 1000 });
+  });
+
+  it('stores no sender for muted chats', () => {
+    store.chats.ensure({ id: 30, type: 'supergroup', title: 'Group', username: null }, 'muted', 0);
+    sink.onMessage(tgMessage({ id: 5, chat: peer({ id: 30, type: 'supergroup', title: 'Group' }), sender: { id: 20, name: 'Bob Example', username: null, isBot: false } }));
+    expect(store.senders.getMany([20]).size).toBe(0);
+  });
+
   it('stores an incoming live message, bumps the top and counts it unread', () => {
     sink.onMessage(tgMessage({ id: 5 }), { live: true });
     expect(store.messages.count()).toBe(1);
@@ -27,7 +38,7 @@ describe('UpdateSink.onMessage', () => {
 
   it('clears pending when I reply from another device', () => {
     sink.onMessage(tgMessage({ id: 5 }), { live: true });
-    sink.onMessage(tgMessage({ id: 6, out: true, senderId: 1 }), { live: true });
+    sink.onMessage(tgMessage({ id: 6, out: true, sender: { id: 1, name: 'Me Example', username: null, isBot: false } }), { live: true });
     expect(status(10)).toBe('clear');
   });
 

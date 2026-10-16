@@ -10,6 +10,7 @@ export function makeToolDeps(): { deps: ToolDeps; t: ReturnType<typeof makeActio
     actions: t.deps,
     db: t.store.db,
     labels: t.store.labels,
+    senders: t.store.senders,
     backfill: { gateway: t.gateway, chats: t.store.chats, messages: t.store.messages, cursors: t.store.cursors, sink: t.deps.sink },
     status: () => ({ auth: 'ok', lastUpdateAt: null, lastSweepAt: null, lastSweep: null, chats: t.store.chats.count(), messages: t.store.messages.count() }),
   };

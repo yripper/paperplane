@@ -4,6 +4,7 @@ import type { ChatsRepo } from '../store/chats-repo.js';
 import type { Db } from '../store/db.js';
 import type { LabelsRepo } from '../store/labels-repo.js';
 import type { MessagesRepo } from '../store/messages-repo.js';
+import type { SendersRepo } from '../store/senders-repo.js';
 import type { ChatRow, ChatType, MessageRow, WatchLevel } from '../store/types.js';
 import type { TgDeleteEvent, TgMessage, TgPeer, TgReadEvent } from '../telegram/types.js';
 
@@ -12,6 +13,7 @@ export interface SinkDeps {
   chats: ChatsRepo;
   messages: MessagesRepo;
   labels: LabelsRepo;
+  senders: SendersRepo;
   watchDefaults: Record<ChatType, WatchLevel>;
   /** Unix seconds. */
   now: () => number;
@@ -21,7 +23,7 @@ export function toMessageRow(m: TgMessage, sentViaPaperplane: boolean): MessageR
   return {
     chatId: m.chat.id,
     msgId: m.id,
-    senderId: m.senderId,
+    senderId: m.sender?.id ?? null,
     date: m.date,
     out: m.out,
     text: m.text,
@@ -50,7 +52,7 @@ export class UpdateSink {
     const now = this.d.now();
     this.d.db.transaction(() => {
       const before = this.ensureChat(m.chat);
-      if (before.watchLevel !== 'muted') this.d.messages.upsert(toMessageRow(m, opts.sentViaPaperplane ?? false));
+      if (before.watchLevel !== 'muted') this.store(m, opts.sentViaPaperplane ?? false, now);
       const advanced = m.id > before.topMsgId;
       this.d.chats.bumpTop(m.chat.id, m.id, m.out, m.date, now);
       if (!advanced || m.out) return;
@@ -64,8 +66,13 @@ export class UpdateSink {
   onEdit(m: TgMessage): void {
     this.d.db.transaction(() => {
       const chat = this.ensureChat(m.chat);
-      if (chat.watchLevel !== 'muted') this.d.messages.upsert(toMessageRow(m, false));
+      if (chat.watchLevel !== 'muted') this.store(m, false, this.d.now());
     })();
+  }
+
+  private store(m: TgMessage, sentViaPaperplane: boolean, now: number): void {
+    this.d.messages.upsert(toMessageRow(m, sentViaPaperplane));
+    if (m.sender) this.d.senders.upsert(m.sender, now);
   }
 
   onDelete(e: TgDeleteEvent): void {

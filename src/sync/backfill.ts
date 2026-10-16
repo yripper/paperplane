@@ -36,22 +36,25 @@ export async function backfillPage(
 }
 
 /// Store first, Telegram for whatever's missing. Muted chats aren't stored at
-/// all, so they always read straight from Telegram.
+/// all, so they always read straight from Telegram. `refresh` re-fetches the
+/// page through the sink, which rewrites stored text (hidden links) and senders.
 export async function readHistory(
   d: BackfillDeps,
   chatId: number,
-  opts: { limit: number; beforeId?: number },
+  opts: { limit: number; beforeId?: number; refresh?: boolean },
 ): Promise<MessageRow[]> {
   const chat = d.chats.get(chatId);
   if (!chat) throw new AppError('NOT_FOUND', `unknown chat ${chatId}`);
+  const page = { limit: opts.limit, beforeId: opts.beforeId };
   if (chat.watchLevel === 'muted') {
-    return (await d.gateway.getHistory(chatId, opts)).map((m) => toMessageRow(m, false));
+    return (await d.gateway.getHistory(chatId, page)).map((m) => toMessageRow(m, false));
   }
-  let rows = d.messages.history(chatId, opts);
+  if (opts.refresh) for (const m of await d.gateway.getHistory(chatId, page)) d.sink.onMessage(m);
+  let rows = d.messages.history(chatId, page);
   for (let pages = 0; rows.length < opts.limit && pages < MAX_PAGES_PER_READ; pages++) {
-    const page = await backfillPage(d, chatId);
-    rows = d.messages.history(chatId, opts);
-    if (page.fetched === 0 || page.complete) break;
+    const fetched = await backfillPage(d, chatId);
+    rows = d.messages.history(chatId, page);
+    if (fetched.fetched === 0 || fetched.complete) break;
   }
   return rows;
 }

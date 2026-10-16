@@ -1,4 +1,4 @@
-import type { DeleteMode, TelegramGateway, TgDialog, TgFolder, TgMessage, TgPeer } from '../telegram/types.js';
+import type { DeleteMode, TelegramGateway, TgDialog, TgFolder, TgMessage, TgPeer, TgSender } from '../telegram/types.js';
 import { peer, tgMessage } from './fixtures.js';
 
 /// In-memory Telegram for tests. Records every call; failures are injectable
@@ -9,6 +9,7 @@ export class FakeGateway implements TelegramGateway {
   history = new Map<number, TgMessage[]>();
   folders: TgFolder[] = [];
   peers = new Map<number, TgPeer>();
+  users = new Map<number, TgSender>();
   readonly calls: { method: string; args: unknown[] }[] = [];
   failDialogsAfter: number | null = null;
   failHistoryFor = new Set<number>();
@@ -61,7 +62,7 @@ export class FakeGateway implements TelegramGateway {
     return tgMessage({
       id: this.nextId++,
       chat: this.peers.get(chatId) ?? peer({ id: chatId }),
-      senderId: 1,
+      sender: { id: 1, name: 'Me Example', username: null, isBot: false },
       out: true,
       text,
       replyToMsgId: replyTo ?? null,
@@ -130,5 +131,10 @@ export class FakeGateway implements TelegramGateway {
 
   async blockUser(userId: number): Promise<void> {
     this.record('blockUser', [userId]);
+  }
+
+  async getUsers(userIds: number[]): Promise<TgSender[]> {
+    this.record('getUsers', [userIds]);
+    return userIds.flatMap((id) => this.users.get(id) ?? []);
   }
 }

@@ -1,17 +1,24 @@
 import type { PendingItem } from '../store/pending-query.js';
-import type { ChatRow, MessageRow } from '../store/types.js';
+import type { ChatRow, MessageRow, SenderRow } from '../store/types.js';
 
 const iso = (sec: number): string => new Date(sec * 1000).toISOString();
 
 export interface MessageView {
   id: number;
   date: string;
-  from: 'me' | number | null;
+  from: 'me' | SenderView | null;
   text: string;
   media: string | null;
   replyTo: number | null;
   edited: boolean;
   viaPaperplane: boolean;
+}
+
+/** name and username are null for senders Paperplane couldn't look up. */
+export interface SenderView {
+  id: number;
+  name: string | null;
+  username: string | null;
 }
 
 export interface ChatView {
@@ -34,11 +41,17 @@ export interface PendingView extends ChatView {
   note: string | null;
 }
 
-export function formatMessage(m: MessageRow): MessageView {
+function formatSender(id: number | null, senders: ReadonlyMap<number, SenderRow>): SenderView | null {
+  if (id === null) return null;
+  const s = senders.get(id);
+  return { id, name: s?.name ?? null, username: s?.username ?? null };
+}
+
+export function formatMessage(m: MessageRow, senders: ReadonlyMap<number, SenderRow> = new Map()): MessageView {
   return {
     id: m.msgId,
     date: iso(m.date),
-    from: m.out ? 'me' : m.senderId,
+    from: m.out ? 'me' : formatSender(m.senderId, senders),
     // Media-only messages still need something readable in a transcript.
     text: m.text || (m.mediaKind ? `[${m.mediaKind}]` : ''),
     media: m.mediaKind,

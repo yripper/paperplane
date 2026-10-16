@@ -82,4 +82,15 @@ export const MIGRATIONS: readonly string[] = [
     outcome TEXT NOT NULL
   );
   `,
+  `
+  -- Who wrote messages, so transcripts show names and @usernames instead of ids.
+  -- Users, plus chats that post as themselves (negative ids).
+  CREATE TABLE senders (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    username TEXT,
+    is_bot INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL
+  );
+  `,
 ];

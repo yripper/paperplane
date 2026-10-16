@@ -9,15 +9,15 @@ describe('openDb', () => {
       .all()
       .map((r) => (r as { name: string }).name);
     expect(tables).toEqual(
-      expect.arrayContaining(['audit_log', 'chat_labels', 'chats', 'cleanup_plans', 'messages', 'messages_fts', 'sync_cursors']),
+      expect.arrayContaining(['audit_log', 'chat_labels', 'chats', 'cleanup_plans', 'messages', 'messages_fts', 'senders', 'sync_cursors']),
     );
-    expect(db.pragma('user_version', { simple: true })).toBe(1);
+    expect(db.pragma('user_version', { simple: true })).toBe(2);
   });
 
   it('migrate is idempotent', () => {
     const db = openDb(':memory:');
     expect(() => migrate(db)).not.toThrow();
-    expect(db.pragma('user_version', { simple: true })).toBe(1);
+    expect(db.pragma('user_version', { simple: true })).toBe(2);
   });
 
   it('keeps the FTS index in sync on insert, update and delete', () => {

@@ -34,5 +34,6 @@ export function createUnauthenticatedGateway(message: string = NOT_LOGGED_IN): T
     deleteChat: reject,
     leaveChat: reject,
     blockUser: reject,
+    getUsers: reject,
   };
 }

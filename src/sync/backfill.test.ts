@@ -59,6 +59,15 @@ describe('readHistory', () => {
     expect(rows.map((m) => m.msgId)).toEqual([100, 99, 98, 97, 96, 95, 94, 93, 92, 91]);
   });
 
+  it('refresh re-fetches the page so stored text and senders are updated', async () => {
+    for (const m of gateway.history.get(10) ?? []) deps.sink.onMessage({ ...m, text: 'stale', sender: null });
+    gateway.history.set(10, [tgMessage({ id: 5, date: 5, text: '[docs](https://example.com)', sender: { id: 20, name: 'Bob Example', username: 'bob_example', isBot: false } })]);
+    const rows = await readHistory(deps, 10, { limit: 1, refresh: true });
+    expect(rows[0]).toMatchObject({ msgId: 5, text: '[docs](https://example.com)' });
+    expect(store.senders.getMany([20]).size).toBe(1);
+    expect(gateway.callsTo('getHistory')).toEqual([[10, { limit: 1, beforeId: undefined }]]);
+  });
+
   it('throws NOT_FOUND for an unknown chat', async () => {
     await expect(readHistory(deps, 404, { limit: 10 })).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });

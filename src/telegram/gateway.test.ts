@@ -66,3 +66,37 @@ describe('MtcuteGateway.deleteChat', () => {
     await expect(f.gateway.deleteChat(5, 'delete')).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
 });
+
+describe('MtcuteGateway.getUsers', () => {
+  // Users mtcute can't resolve (not in its peer cache) make the whole batch throw.
+  const fakeUsers = (known: Record<number, { displayName: string; username: string | null }>) => {
+    const batches: number[][] = [];
+    const client = {
+      getUsers: async (ids: number | number[]) => {
+        const list = Array.isArray(ids) ? ids : [ids];
+        batches.push(list);
+        if (list.some((id) => !(id in known))) throw new Error('PEER_ID_INVALID');
+        return list.map((id) => ({ id, type: 'user', isBot: false, ...known[id] }));
+      },
+    };
+    return { gateway: new MtcuteGateway(client as unknown as TelegramClient), batches };
+  };
+
+  it('fetches users in one batch', async () => {
+    const f = fakeUsers({ 21: { displayName: 'Carol Example', username: 'carol_example' } });
+    expect(await f.gateway.getUsers([21])).toEqual([{ id: 21, name: 'Carol Example', username: 'carol_example', isBot: false }]);
+    expect(f.batches).toEqual([[21]]);
+  });
+
+  it('falls back to one at a time and drops users it cannot resolve', async () => {
+    const f = fakeUsers({ 21: { displayName: 'Carol Example', username: null } });
+    expect(await f.gateway.getUsers([21, 99])).toEqual([{ id: 21, name: 'Carol Example', username: null, isBot: false }]);
+    expect(f.batches).toEqual([[21, 99], [21], [99]]);
+  });
+
+  it('makes no call for an empty list', async () => {
+    const f = fakeUsers({});
+    expect(await f.gateway.getUsers([])).toEqual([]);
+    expect(f.batches).toEqual([]);
+  });
+});

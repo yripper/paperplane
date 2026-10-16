@@ -2,7 +2,7 @@
 
 > **Living document.** Read this before modifying the module. Update it in the same change whenever the module's behavior, public surface, files, or dependencies change.
 
-**Source:** `src/telegram/` · **Last verified:** 2026-10-16 (paged `deleteChat`)
+**Source:** `src/telegram/` · **Last verified:** 2026-10-16 (message senders, hidden links, `getUsers`)
 
 ## Purpose
 
@@ -27,7 +27,9 @@ The only module that imports mtcute. Owns the MTProto user client (login, live u
 - `createSession(o, sink, hooks)` (`session.ts:29`): the daemon's single connection; returns `{ gateway, connect, destroy }`. `login` (`session.ts:70`) and `logout` (`session.ts:82`) are the CLI flows; they build the client with updates disabled and rethrow mapped errors. `connect()` returns `'auth_required'` instead of prompting.
 - `MtcuteGateway` (`gateway.ts:36`): `TelegramGateway` over a `TelegramClient`. `createTelegramClient` (`client.ts:16`) builds that client.
 - `mapTelegramError` (`errors.ts:16`): `AppError` passes through, everything else is mapped or wrapped as `INTERNAL`.
-- Adapters (`adapt.ts:9`, `:15`, `:20`, `:34`): `mapChatType`, `adaptPeer`, `adaptMessage`, `adaptDialog`.
+- Adapters (`adapt.ts:9`, `:15`, `:48`, `:53`, `:67`): `mapChatType`, `adaptPeer`, `adaptSender`, `adaptMessage`, `adaptDialog`. `inlineLinks(text, links)` (`adapt.ts:29`) rewrites hidden hyperlinks as markdown.
+- `TgMessage.sender: TgSender | null` (`types.ts`): id, display name, username, bot flag. A user, or a chat when a channel or anonymous admin posts.
+- `getUsers(userIds)` (`gateway.ts:178`): looks up users by id; drops ones mtcute can't resolve.
 - `KeychainAuthKeys` (`src/telegram/keychain-auth-keys.ts:13`): `IAuthKeysRepository` implementation, constructed as `new KeychainAuthKeys(secrets: SecretStore)`.
 
 ## Key methods
@@ -58,6 +60,8 @@ The only module that imports mtcute. Owns the MTProto user client (login, live u
 - `updates.catchUp: true` replays downtime but can emit duplicates after an unclean shutdown. Every downstream write must be idempotent.
 - Peer ids are marked plain numbers (channels `-100…`). Resolving a numeric id only works if the peer is in mtcute's cache, so `iterDialogs` runs at startup to seed it, otherwise you get `MtPeerNotFoundError`.
 - Composite storage: mtcute's storage managers only read `driver`, `kv`, `authKeys`, `peers` and `refMessages` off the provider, so `authKeys` can be swapped for a Keychain repo while the rest stays in `~/.paperplane/mtcute.db`. `IAuthKeysRepository.set` must persist immediately, with no batching.
+- `adaptMessage` keeps the sender mtcute already attaches to every message (no extra call) and turns `text_link` / `text_mention` entities into `[label](url)` / `[label](tg://user?id=N)`, because Telegram keeps link targets in entities, not in `m.text`. Entity offsets are UTF-16 units, which match JS string indexes.
+- `getUsers`: one id mtcute has never cached makes the whole `tg.getUsers` batch throw, so a failed batch retries one id at a time and skips failures.
 - Folder titles are `tl.TypeTextWithEntities` (`{ _: 'textWithEntities', text, entities: [] }`), not strings. `includePeers`, `excludePeers` and `pinnedPeers` are all required on a `RawDialogFilter`.
 - mtcute's `deleteHistory` (`@mtcute/core` `highlevel/methods/chats/delete-history.js:4-19`) makes one `messages.deleteHistory` call and ignores `affectedHistory.offset`, so a long chat would be only partly deleted. The gateway replicates it in a loop; `createDummyUpdate` (`highlevel/updates/utils.js:60-69`) and `isInputPeerChannel` (`highlevel/utils/peer-utils.js:113`) aren't exported from `@mtcute/node`, so their few lines are inlined.
 - There's no high-level mute method; use the raw `account.updateNotifySettings` call with `inputNotifyPeer` and `inputPeerNotifySettings.muteUntil`.
@@ -78,4 +82,4 @@ The only module that imports mtcute. Owns the MTProto user client (login, live u
 
 ## Testing
 
-- `pnpm test src/telegram`: `KeychainAuthKeys` tests run against `MemorySecretStore`; never touch the real Keychain. `errors.test.ts` and `adapt.test.ts` cover error mapping and `mapChatType`. `gateway.test.ts` drives `deleteChat` against a minimal fake client (`resolvePeer`, `call`, `handleClientUpdate`): looping on `offset`, mode flags, the dummy pts updates (incl. channel id), the 200-call cap and error mapping.
+- `pnpm test src/telegram`: `KeychainAuthKeys` tests run against `MemorySecretStore`; never touch the real Keychain. `errors.test.ts` and `adapt.test.ts` cover error mapping, `mapChatType` and `inlineLinks` (multiple links, UTF-16 offsets). `gateway.test.ts` drives `deleteChat` and `getUsers` (batch, per-id fallback, empty list) against a minimal fake client (`resolvePeer`, `call`, `handleClientUpdate`): looping on `offset`, mode flags, the dummy pts updates (incl. channel id), the 200-call cap and error mapping.

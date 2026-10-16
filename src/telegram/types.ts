@@ -7,10 +7,18 @@ export interface TgPeer {
   username: string | null;
 }
 
+/// Who wrote a message: a user, or a chat when a channel or anonymous admin posts.
+export interface TgSender {
+  id: number;
+  name: string;
+  username: string | null;
+  isBot: boolean;
+}
+
 export interface TgMessage {
   id: number;
   chat: TgPeer;
-  senderId: number | null;
+  sender: TgSender | null;
   date: number;
   out: boolean;
   text: string;
@@ -70,4 +78,6 @@ export interface TelegramGateway {
   deleteChat(chatId: number, mode: DeleteMode): Promise<void>;
   leaveChat(chatId: number): Promise<void>;
   blockUser(userId: number): Promise<void>;
+  /** Users mtcute can't resolve are left out; the result may be shorter than `userIds`. */
+  getUsers(userIds: number[]): Promise<TgSender[]>;
 }

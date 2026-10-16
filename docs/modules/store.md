@@ -2,7 +2,7 @@
 
 > **Living document.** Read this before modifying the module. Update it in the same change whenever the module's behavior, public surface, files, or dependencies change.
 
-**Source:** `src/store/` · **Last verified:** 2026-10-16 (pending: newest first, DMs + full-watch groups only)
+**Source:** `src/store/` · **Last verified:** 2026-10-16 (`senders` table)
 
 ## Purpose
 
@@ -19,6 +19,7 @@ Paperplane's own SQLite database at `~/.paperplane/paperplane.db` (better-sqlite
 | `messages-repo.ts` | `MessagesRepo` (upsert, soft delete, history, FTS search) |
 | `cursors-repo.ts` | `CursorsRepo` + `SyncCursor`: per-chat backfill progress |
 | `labels-repo.ts` | `LabelsRepo` (upsert/get/clear), `rowToLabel` |
+| `senders-repo.ts` | `SendersRepo` (upsert, `getMany`): names and usernames of message senders |
 | `audit-repo.ts` | `AuditRepo`: metadata-only action log |
 | `cleanup-plans-repo.ts` | `CleanupPlansRepo`, `CleanupPlan`, `CleanupItem` |
 | `pending-query.ts` | `listPending`: SQL + ordering behind `get_pending` |
@@ -30,11 +31,12 @@ Paperplane's own SQLite database at `~/.paperplane/paperplane.db` (better-sqlite
 - `openDb(file: string): Db`: `src/store/db.ts:6` (`':memory:'` allowed)
 - `migrate(db: Db): void`: `src/store/db.ts:14`
 - `MIGRATIONS`: `src/store/schema.ts:3`
-- Row types `ChatType`, `WatchLevel`, `LabelKind`, `ChatRow`, `MessageRow`, `ChatLabel`: `src/store/types.ts:1-43`. Row types use camelCase and booleans; SQL columns are snake_case with 0/1 integers, so repositories must map.
+- Row types `ChatType`, `WatchLevel`, `LabelKind`, `ChatRow`, `MessageRow`, `SenderRow`, `ChatLabel`: `src/store/types.ts`. Row types use camelCase and booleans; SQL columns are snake_case with 0/1 integers, so repositories must map.
 - `ChatsRepo`: `src/store/chats-repo.ts:54`. Helpers `rowToChat` `:33` (exported for pending-query), `ChatSeed` `:4`, `DialogSnapshot` `:11`, `ChatFilter` `:23`.
 - `MessagesRepo`: `src/store/messages-repo.ts:34`.
 - `CursorsRepo`: `src/store/cursors-repo.ts:9`; `SyncCursor` `:3`.
 - `LabelsRepo`: `src/store/labels-repo.ts:14`; `rowToLabel` `:4`.
+- `SendersRepo`: `src/store/senders-repo.ts:4`; `upsert(sender, now)` (last write wins, so renames replace), `getMany(ids)` returns a map of the known ones.
 - `AuditRepo`: `src/store/audit-repo.ts:4`; `CleanupPlansRepo`: `src/store/cleanup-plans-repo.ts:22`; `CleanupItem` `:5`, `CleanupPlan` `:12`.
 - `listPending(db, nowSec, { limit }): PendingItem[]`: `src/store/pending-query.ts:28`; `PendingItem` `:7`.
 
@@ -58,6 +60,7 @@ Paperplane's own SQLite database at `~/.paperplane/paperplane.db` (better-sqlite
 - Migrations are append-only: never edit a shipped entry in `MIGRATIONS`, add a new one.
 - `messages_fts` is FTS5 external content over `messages`; the `messages_ai/ad/au` triggers keep it in sync. `messages` has a surrogate `id` because external content needs an integer rowid. Write `messages` only via SQL that fires the triggers.
 - All timestamps are unix seconds.
+- Migration 2 adds `senders` (id, name, username, is_bot, updated_at). Messages keep only `sender_id`; names live once per sender so a rename updates every transcript. Negative ids are chats posting as themselves.
 - Separate from mtcute's own `mtcute.db`. Never read or write mtcute's tables.
 - The audit log stores metadata only. Never message text or secrets.
 - `sent_via_paperplane` must never be downgraded on re-upsert (a later live update for the same message reports it as a normal outgoing message). `MessagesRepo.upsert` enforces it with `MAX(...)` (`messages-repo.ts:44`).

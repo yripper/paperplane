@@ -19,6 +19,7 @@ describe('createUnauthenticatedGateway', () => {
     deleteChat: () => g.deleteChat(1, 'delete'),
     leaveChat: () => g.leaveChat(1),
     blockUser: () => g.blockUser(1),
+    getUsers: () => g.getUsers([1]),
   };
 
   it.each(Object.entries(calls))('%s rejects with AUTH_REQUIRED', async (_name, call) => {

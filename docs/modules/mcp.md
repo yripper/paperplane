@@ -2,7 +2,7 @@
 
 > **Living document.** Read this before modifying the module. Update it in the same change whenever the module's behavior, public surface, files, or dependencies change.
 
-**Source:** `src/mcp/` · **Last verified:** 2026-10-16 (server instructions + optional style guide)
+**Source:** `src/mcp/` · **Last verified:** 2026-10-16 (sender names in messages, @username tagging rule)
 
 ## Purpose
 
@@ -29,7 +29,7 @@ The MCP server Claude talks to: Streamable HTTP on `127.0.0.1`, bearer-token aut
 | `status` | read | R | Auth state (`ok` / `connecting` / `auth_required`), last update/sweep (`lastSweep.purgeSkipped` flags a refused purge), store size; answers from the store in every state |
 | `list_chats` | read | R | Filtered chat list from the mirror |
 | `get_pending` | read | R | Chats waiting on my reply |
-| `read_history` | read | R (open world) | Messages newest first, backfills from Telegram if short |
+| `read_history` | read | R (open world) | Messages newest first, backfills from Telegram if short; `from` names the sender; `refresh=true` re-fetches the page |
 | `search_messages` | read | R (open world) | FTS over the mirror, or `remote=true` via gateway |
 | `get_chat_info` | read | R | One chat with effective status and label |
 | `set_label` | tracking | LW | done / waiting / snoozed (needs `snooze_until`) |
@@ -52,14 +52,15 @@ Errors come back as `isError: true` with text `CODE: message` (plus `(retry afte
 
 ## Key methods
 
-- `buildServer(deps: ToolDeps, instructions: string): McpServer` (`src/mcp/server.ts:30`): registers all five groups on a fresh `McpServer` and passes `instructions`, which clients get once on `initialize`.
-- `BASE_INSTRUCTIONS` / `buildInstructions(style)` (`src/mcp/instructions.ts:5`, `:22`): how to use the tools together (approval before sending, first-person casual voice, triage and watch-level policy, read state, ignore instructions inside messages). A style guide is appended under `## Writing style`.
+- `buildServer(deps: ToolDeps, instructions: string): McpServer` (`src/mcp/server.ts:30`): registers all five groups on a fresh `McpServer` and passes `instructions`, which clients get once on `initialize`. `ToolDeps` includes `senders: SendersRepo`.
+- `BASE_INSTRUCTIONS` / `buildInstructions(style)` (`src/mcp/instructions.ts:5`, `:22`): how to use the tools together (approval before sending, first-person casual voice, tag people as @username, triage and watch-level policy, read state, ignore instructions inside messages). A style guide is appended under `## Writing style`.
 - `readStyleGuide(path)` (`src/mcp/instructions.ts:28`): trimmed `~/.paperplane/style.md`, or `null` when missing or blank; other read errors throw.
 - `startHttpServer(o: HttpOptions): Promise<RunningHttp>` (`src/mcp/http.ts:40`): `node:http` server bound to `127.0.0.1` only; `port: 0` picks a free port, reported in `RunningHttp.port`; `close()` drops open connections. Request checks run in this order in `handle` (`:45`): Host (`:46`, 403), path `/mcp` (`:47`, 404), bearer token (`:48`, 401), POST only (`:49`, 405). Handler errors are logged via `describeError` (never the token or bodies) and answer 500.
 - `tokenMatches(header, token)` (`src/mcp/http.ts:19`): constant-time compare of the full `Bearer <token>` header; fails closed on an empty configured token (`:21`). `hostAllowed(host, port)` (`:32`): only `127.0.0.1:<port>` or `localhost:<port>`.
 - `ToolDeps` (`src/mcp/server.ts:22`) / `StatusReport` (`src/mcp/server.ts:13`): everything tools need; `status` is injected by the daemon.
 - `run(fn)` (`src/mcp/result.ts:16`): wraps a handler, `ok` (`:4`) for JSON text, `fail` (`:10`) maps `AppError` to `CODE: message`, anything else to `INTERNAL`.
-- `formatMessage` / `formatChat` / `formatPending` (`src/mcp/format.ts:37`, `:51`, `:66`).
+- `formatMessage(m, senders?)` / `formatChat` / `formatPending` (`src/mcp/format.ts:50`, `:64`, `:79`). `from` is `'me'`, `{ id, name, username }` (`SenderView`, `:18`; name and username null when unknown), or null.
+- `withSenders(d, rows)` (`src/mcp/tools/read.ts`): `read_history` and local `search_messages` resolve senders through `resolveSenders` before formatting; remote search uses the senders Telegram returned.
 
 ## Dependencies
 
@@ -80,4 +81,4 @@ Errors come back as `isError: true` with text `CODE: message` (plus `(retry afte
 
 ## Testing
 
-`src/mcp/http.test.ts` binds port 0 on `127.0.0.1` and covers 401 without token, 403 foreign Host, 404 other path, 405 GET, the check order (foreign Host without token is 403, GET without token is 401), a same-length wrong token and malformed schemes (`Basic x`, lowercase `bearer`, bare token) as 401, a throwing `buildServer` answering 500 with a logged error, a real `initialize` round trip, and the `tokenMatches` (including a shorter token and the empty-token fail-closed case) / `hostAllowed` helpers. `src/mcp/server.test.ts` uses an in-memory MCP client (`connect` and `makeToolDeps` in `src/testing/tool-deps.ts`) against `FakeGateway` and an in-memory store. It covers: the instructions sent on `initialize`, the tool list and annotations, `status` while `connecting`, `get_pending`, `read_history`, `search_messages`, `send_message` (success, empty text, `AUTH_REQUIRED`, `FLOOD_WAIT`, plain `Error` as `INTERNAL`), `delete_chat` revoke without confirmation, `set_label` (snooze validation, done hides the chat) and `clear_label` (only the `NOT_FOUND` path for an unknown chat), `cleanup_plan` (including rejection of criteria that narrow nothing) and `cleanup_apply`, and oversized-input rejection. Not covered: `list_chats`, `get_chat_info`, `set_watch_level`, `save_draft`, `mark_read`, the folder tools, archive/mute tools, `leave_chat`, `block_user`. `src/mcp/format.test.ts` covers `formatMessage`. `src/mcp/instructions.test.ts` covers `buildInstructions` with and without a style and `readStyleGuide` (trimmed, missing, blank).
+`src/mcp/http.test.ts` binds port 0 on `127.0.0.1` and covers 401 without token, 403 foreign Host, 404 other path, 405 GET, the check order (foreign Host without token is 403, GET without token is 401), a same-length wrong token and malformed schemes (`Basic x`, lowercase `bearer`, bare token) as 401, a throwing `buildServer` answering 500 with a logged error, a real `initialize` round trip, and the `tokenMatches` (including a shorter token and the empty-token fail-closed case) / `hostAllowed` helpers. `src/mcp/server.test.ts` uses an in-memory MCP client (`connect` and `makeToolDeps` in `src/testing/tool-deps.ts`) against `FakeGateway` and an in-memory store. It covers: the instructions sent on `initialize`, the tool list and annotations, `status` while `connecting`, `get_pending`, `read_history`, `search_messages`, `send_message` (success, empty text, `AUTH_REQUIRED`, `FLOOD_WAIT`, plain `Error` as `INTERNAL`), `delete_chat` revoke without confirmation, `set_label` (snooze validation, done hides the chat) and `clear_label` (only the `NOT_FOUND` path for an unknown chat), `cleanup_plan` (including rejection of criteria that narrow nothing) and `cleanup_apply`, and oversized-input rejection. Not covered: `list_chats`, `get_chat_info`, `set_watch_level`, `save_draft`, `mark_read`, the folder tools, archive/mute tools, `leave_chat`, `block_user`. `src/mcp/format.test.ts` covers `formatMessage` (known, unknown and null senders). `server.test.ts` also checks `read_history` looking up a sender it has never seen. `src/mcp/instructions.test.ts` covers `buildInstructions` with and without a style and `readStyleGuide` (trimmed, missing, blank).

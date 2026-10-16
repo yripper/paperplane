@@ -3,6 +3,7 @@ import { CursorsRepo } from '../store/cursors-repo.js';
 import { type Db, openDb } from '../store/db.js';
 import { LabelsRepo } from '../store/labels-repo.js';
 import { MessagesRepo } from '../store/messages-repo.js';
+import { SendersRepo } from '../store/senders-repo.js';
 import type { ChatType, WatchLevel } from '../store/types.js';
 import { UpdateSink } from '../sync/update-sink.js';
 import type { TgDialog, TgMessage, TgPeer } from '../telegram/types.js';
@@ -19,7 +20,7 @@ export const peer = (over: Partial<TgPeer> = {}): TgPeer => ({
 export const tgMessage = (over: Partial<TgMessage> = {}): TgMessage => ({
   id: 1,
   chat: peer(),
-  senderId: 10,
+  sender: { id: 10, name: 'Alice Example', username: null, isBot: false },
   date: 100,
   out: false,
   text: 'hello',
@@ -54,11 +55,12 @@ export interface TestStore {
   messages: MessagesRepo;
   labels: LabelsRepo;
   cursors: CursorsRepo;
+  senders: SendersRepo;
 }
 
 export function makeStore(): TestStore {
   const db = openDb(':memory:');
-  return { db, chats: new ChatsRepo(db), messages: new MessagesRepo(db), labels: new LabelsRepo(db), cursors: new CursorsRepo(db) };
+  return { db, chats: new ChatsRepo(db), messages: new MessagesRepo(db), labels: new LabelsRepo(db), cursors: new CursorsRepo(db), senders: new SendersRepo(db) };
 }
 
 export function makeSink(store: TestStore, now: () => number = () => 1000): UpdateSink {

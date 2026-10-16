@@ -52,8 +52,21 @@ describe('MCP tools', () => {
   });
 
   it('read_history and search_messages read the mirror', async () => {
-    expect(JSON.parse((await call('read_history', { chat_id: 10 })).text)[0]).toMatchObject({ id: 1, from: 10 });
+    expect(JSON.parse((await call('read_history', { chat_id: 10 })).text)[0]).toMatchObject({
+      id: 1,
+      from: { id: 10, name: 'Alice Example', username: null },
+    });
     expect(JSON.parse((await call('search_messages', { query: 'invoice' })).text)).toHaveLength(1);
+  });
+
+  it('read_history looks up senders it has never seen', async () => {
+    t.gateway.users.set(21, { id: 21, name: 'Carol Example', username: 'carol_example', isBot: false });
+    t.store.messages.upsert({
+      chatId: 10, msgId: 2, senderId: 21, date: 200, out: false, text: 'older import', mediaKind: null,
+      replyToMsgId: null, editedAt: null, deletedAt: null, sentViaPaperplane: false,
+    });
+    const messages = JSON.parse((await call('read_history', { chat_id: 10 })).text) as { id: number; from: unknown }[];
+    expect(messages.find((m) => m.id === 2)?.from).toEqual({ id: 21, name: 'Carol Example', username: 'carol_example' });
   });
 
   it('send_message sends through the gateway and clears pending', async () => {

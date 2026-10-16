@@ -18,6 +18,10 @@ describe('buildInstructions', () => {
   it('keeps the approval rule for sends', () => {
     expect(BASE_INSTRUCTIONS).toContain('wait for the user\'s explicit OK');
   });
+
+  it('asks for @username tags instead of names', () => {
+    expect(BASE_INSTRUCTIONS).toContain('tag them as @username');
+  });
 });
 
 describe('readStyleGuide', () => {

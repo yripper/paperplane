@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { ActionDeps } from '../actions/context.js';
 import type { Db } from '../store/db.js';
 import type { LabelsRepo } from '../store/labels-repo.js';
+import type { SendersRepo } from '../store/senders-repo.js';
 import type { BackfillDeps } from '../sync/backfill.js';
 import type { SweepReport } from '../sync/sweep.js';
 import { registerDestructiveTools } from './tools/destructive.js';
@@ -23,6 +24,7 @@ export interface ToolDeps {
   actions: ActionDeps;
   db: Db;
   labels: LabelsRepo;
+  senders: SendersRepo;
   backfill: BackfillDeps;
   status: () => StatusReport;
 }

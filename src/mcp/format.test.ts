@@ -10,7 +10,16 @@ const row = (over: Partial<MessageRow>): MessageRow => ({
 describe('formatMessage', () => {
   it('shows who sent it and an ISO date', () => {
     expect(formatMessage(row({ out: true }))).toMatchObject({ id: 1, from: 'me', date: '1970-01-01T00:00:00.000Z', text: 'hi' });
-    expect(formatMessage(row({})).from).toBe(10);
+    expect(formatMessage(row({})).from).toEqual({ id: 10, name: null, username: null });
+  });
+
+  it('names the sender when known', () => {
+    const senders = new Map([[10, { id: 10, name: 'Alice Example', username: 'alice_example', isBot: false, updatedAt: 0 }]]);
+    expect(formatMessage(row({}), senders).from).toEqual({ id: 10, name: 'Alice Example', username: 'alice_example' });
+  });
+
+  it('reports a missing sender as null', () => {
+    expect(formatMessage(row({ senderId: null })).from).toBeNull();
   });
 
   it('formats media-only messages', () => {

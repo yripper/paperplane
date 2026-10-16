@@ -15,6 +15,7 @@ import { CursorsRepo } from '../store/cursors-repo.js';
 import { openDb } from '../store/db.js';
 import { LabelsRepo } from '../store/labels-repo.js';
 import { MessagesRepo } from '../store/messages-repo.js';
+import { SendersRepo } from '../store/senders-repo.js';
 import { backfillFullChats, type BackfillDeps } from '../sync/backfill.js';
 import { runSweep, type SweepReport } from '../sync/sweep.js';
 import { UpdateSink } from '../sync/update-sink.js';
@@ -115,8 +116,9 @@ async function runDaemon(secrets: SecretStore, log: Logger, paths: AppPaths, con
   const chats = new ChatsRepo(db);
   const messages = new MessagesRepo(db);
   const labels = new LabelsRepo(db);
+  const senders = new SendersRepo(db);
   const cursors = new CursorsRepo(db);
-  const sink = new UpdateSink({ db, chats, messages, labels, watchDefaults: config.defaultWatchLevel, now: nowSec });
+  const sink = new UpdateSink({ db, chats, messages, labels, senders, watchDefaults: config.defaultWatchLevel, now: nowSec });
 
   const state: { auth: StatusReport['auth']; lastUpdateAt: number | null; lastSweepAt: number | null; lastSweep: SweepReport | null } = {
     auth: 'auth_required',
@@ -178,7 +180,7 @@ async function runDaemon(secrets: SecretStore, log: Logger, paths: AppPaths, con
     token,
     log: (l) => log.warn(l),
     // style.md is re-read per request so edits apply without a restart.
-    buildServer: () => buildServer({ actions, db, labels, backfill, status }, buildInstructions(readStyleGuide(paths.style))),
+    buildServer: () => buildServer({ actions, db, labels, senders, backfill, status }, buildInstructions(readStyleGuide(paths.style))),
   });
   res.http = http;
   log.info(`paperplane listening on http://127.0.0.1:${http.port}/mcp (telegram auth: ${state.auth})`);

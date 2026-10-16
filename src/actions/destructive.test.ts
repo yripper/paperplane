@@ -19,7 +19,7 @@ describe('deleteChat', () => {
 
   it('clear keeps the chat but empties its history', async () => {
     t.deps.sink.onMessage({
-      id: 1, chat: { id: 10, type: 'user', title: 'Alice Example', username: null }, senderId: 10, date: 1,
+      id: 1, chat: { id: 10, type: 'user', title: 'Alice Example', username: null }, sender: null, date: 1,
       out: false, text: 'x', mediaKind: null, replyToMsgId: null, editedAt: null,
     });
     await deleteChat(t.deps, { chatId: 10, mode: 'clear' });

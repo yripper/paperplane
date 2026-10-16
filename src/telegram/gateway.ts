@@ -1,8 +1,8 @@
 import { getMarkedPeerId, type TelegramClient, type tl } from '@mtcute/node';
 import { AppError } from '../domain/errors.js';
-import { adaptDialog, adaptMessage } from './adapt.js';
+import { adaptDialog, adaptMessage, adaptSender } from './adapt.js';
 import { mapTelegramError } from './errors.js';
-import type { DeleteMode, TelegramGateway, TgDialog, TgFolder, TgMessage } from './types.js';
+import type { DeleteMode, TelegramGateway, TgDialog, TgFolder, TgMessage, TgSender } from './types.js';
 
 // INT32_MAX: Telegram's conventional "muted forever".
 const MUTE_FOREVER = 2_147_483_647;
@@ -171,5 +171,26 @@ export class MtcuteGateway implements TelegramGateway {
 
   blockUser(userId: number): Promise<void> {
     return this.guard(() => this.tg.blockUser(userId));
+  }
+
+  /// mtcute resolves ids from its peer cache, and one id it has never seen
+  /// fails the whole batch, so a failed batch retries one id at a time.
+  async getUsers(userIds: number[]): Promise<TgSender[]> {
+    if (userIds.length === 0) return [];
+    try {
+      const users = await this.tg.getUsers(userIds);
+      return users.filter((u) => u !== null).map(adaptSender);
+    } catch {
+      const found: TgSender[] = [];
+      for (const id of userIds) {
+        try {
+          const [user] = await this.tg.getUsers(id);
+          if (user) found.push(adaptSender(user));
+        } catch {
+          // Unresolvable (never cached, deleted account): stays nameless.
+        }
+      }
+      return found;
+    }
   }
 }

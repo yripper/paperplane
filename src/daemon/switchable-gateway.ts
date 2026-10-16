@@ -23,6 +23,7 @@ export function createSwitchableGateway(initial: TelegramGateway): { gateway: Te
     deleteChat: (chatId, mode) => current.deleteChat(chatId, mode),
     leaveChat: (chatId) => current.leaveChat(chatId),
     blockUser: (userId) => current.blockUser(userId),
+    getUsers: (userIds) => current.getUsers(userIds),
   };
   return {
     gateway,

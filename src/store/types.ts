@@ -34,6 +34,14 @@ export interface MessageRow {
   sentViaPaperplane: boolean;
 }
 
+export interface SenderRow {
+  id: number;
+  name: string;
+  username: string | null;
+  isBot: boolean;
+  updatedAt: number;
+}
+
 export interface ChatLabel {
   chatId: number;
   label: LabelKind;
