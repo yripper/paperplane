@@ -16,6 +16,8 @@ export interface SweepReport {
   deltas: number;
   failures: number;
   purged: number;
+  /** True when a complete pass would have purged, but the sanity guard refused. */
+  purgeSkipped: boolean;
   complete: boolean;
   /** Set when iterating dialogs failed; AUTH_REQUIRED here means the session was revoked. */
   iterationError: ErrorCode | null;
@@ -27,6 +29,11 @@ const DELTA_LIMIT = 100;
 // the gap is left; it is not refetched later (backfill pages from the oldest
 // stored message, which is already older than the gap).
 const MAX_DELTA_PAGES = 10;
+// Purge sanity guard: a "complete" pass that suddenly misses most chats is far
+// more likely a Telegram/mtcute glitch (empty or truncated dialog list) than
+// the user deleting them all, and a purge can't be undone locally.
+const PURGE_MIN_CAP = 5;
+const PURGE_MAX_SHARE = 0.25;
 
 export function toSnapshot(d: TgDialog): DialogSnapshot {
   return {
@@ -46,7 +53,7 @@ export function toSnapshot(d: TgDialog): DialogSnapshot {
 /// (core.telegram.org/api/updates). mtcute's gap recovery is the main path;
 /// this catches whatever it still misses, fetching only the delta per chat.
 export async function runSweep(d: SweepDeps): Promise<SweepReport> {
-  const report: SweepReport = { dialogs: 0, deltas: 0, failures: 0, purged: 0, complete: false, iterationError: null };
+  const report: SweepReport = { dialogs: 0, deltas: 0, failures: 0, purged: 0, purgeSkipped: false, complete: false, iterationError: null };
   // iterDialogs pages by top-message date, so a chat that received a message
   // (or was created) mid-sweep may never be yielded; anything touched since
   // the sweep began must not be purged.
@@ -70,15 +77,21 @@ export async function runSweep(d: SweepDeps): Promise<SweepReport> {
   }
   // Only a complete pass proves a chat is gone (deleted or left on another
   // device); a partial pass simply didn't reach it.
-  if (report.complete) {
-    for (const id of d.chats.allIds()) {
-      if (!seen.has(id) && !touchedSince(d.chats, id, sweepStart)) {
-        d.chats.purge(id);
-        report.purged++;
-      }
-    }
-  }
+  if (report.complete) purgeMissing(d, seen, sweepStart, report);
   return report;
+}
+
+function purgeMissing(d: SweepDeps, seen: Set<number>, sweepStart: number, report: SweepReport): void {
+  const stored = d.chats.allIds();
+  const missing = stored.filter((id) => !seen.has(id) && !touchedSince(d.chats, id, sweepStart));
+  if (missing.length === 0) return;
+  if (seen.size === 0 || missing.length > Math.max(PURGE_MIN_CAP, stored.length * PURGE_MAX_SHARE)) {
+    report.purgeSkipped = true;
+    d.log(`sweep: purge skipped (would remove ${missing.length} of ${stored.length} chats)`);
+    return;
+  }
+  for (const id of missing) d.chats.purge(id);
+  report.purged = missing.length;
 }
 
 async function syncDialog(d: SweepDeps, dialog: TgDialog): Promise<boolean> {

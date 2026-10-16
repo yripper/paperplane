@@ -75,7 +75,36 @@ describe('runSweep', () => {
     gateway.dialogs = [tgDialog()];
     const report = await runSweep(deps);
     expect(report.purged).toBe(1);
+    expect(report.purgeSkipped).toBe(false);
     expect(store.chats.get(99)).toBeNull();
+  });
+
+  it('skips the purge when a complete pass saw no dialogs at all', async () => {
+    store.chats.ensure({ id: 99, type: 'user', title: 'Kept', username: null }, 'normal', 0);
+    gateway.dialogs = [];
+    const report = await runSweep(deps);
+    expect(report).toMatchObject({ complete: true, purged: 0, purgeSkipped: true });
+    expect(store.chats.get(99)).not.toBeNull();
+    expect(logs).toContain('sweep: purge skipped (would remove 1 of 1 chats)');
+  });
+
+  it('skips the purge when it would remove more than max(5, 25%) of stored chats', async () => {
+    // 40 stored + the one seen: the cap is max(5, 10.25) = 10, and 40 would go.
+    for (let id = 100; id < 140; id++) store.chats.ensure({ id, type: 'user', title: `Chat ${id}`, username: null }, 'normal', 0);
+    store.chats.ensure({ id: 10, type: 'user', title: 'Alice Example', username: null }, 'normal', 0);
+    gateway.dialogs = [tgDialog()];
+    const report = await runSweep(deps);
+    expect(report).toMatchObject({ complete: true, purged: 0, purgeSkipped: true });
+    expect(store.chats.count()).toBe(41);
+    expect(logs).toContain('sweep: purge skipped (would remove 40 of 41 chats)');
+  });
+
+  it('still purges up to 5 chats even when that is over 25% of a small store', async () => {
+    for (let id = 100; id < 105; id++) store.chats.ensure({ id, type: 'user', title: `Chat ${id}`, username: null }, 'normal', 0);
+    gateway.dialogs = [tgDialog()];
+    const report = await runSweep(deps);
+    expect(report).toMatchObject({ complete: true, purged: 5, purgeSkipped: false });
+    expect(store.chats.count()).toBe(1);
   });
 
   it('does not purge when iteration fails', async () => {

@@ -25,7 +25,7 @@ The MCP server Claude talks to: Streamable HTTP on `127.0.0.1`, bearer-token aut
 
 | Tool | Group | Ann. | What it does |
 |---|---|---|---|
-| `status` | read | R | Auth state (`ok` / `connecting` / `auth_required`), last update/sweep, store size; answers from the store in every state |
+| `status` | read | R | Auth state (`ok` / `connecting` / `auth_required`), last update/sweep (`lastSweep.purgeSkipped` flags a refused purge), store size; answers from the store in every state |
 | `list_chats` | read | R | Filtered chat list from the mirror |
 | `get_pending` | read | R | Chats waiting on my reply |
 | `read_history` | read | R (open world) | Messages newest first, backfills from Telegram if short |

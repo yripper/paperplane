@@ -2,7 +2,7 @@
 
 > **Living document.** Read this before modifying the module. Update it in the same change whenever the module's behavior, public surface, files, or dependencies change.
 
-**Source:** `src/sync/` · **Last verified:** 2026-10-16 (`update-sink.ts`, `sweep.ts` and `backfill.ts` implemented)
+**Source:** `src/sync/` · **Last verified:** 2026-10-16 (sweep purge sanity guard)
 
 ## Purpose
 
@@ -21,7 +21,7 @@ Keeps the local store mirroring Telegram: applies live updates (new/edit/delete/
 - `SinkDeps` (`src/sync/update-sink.ts:10`): `db`, the three repos, `watchDefaults` per `ChatType` and `now` (unix seconds).
 - `toMessageRow(m, sentViaPaperplane)` (`update-sink.ts:20`): `TgMessage` → `MessageRow`.
 - `UpdateSink` (`update-sink.ts:38`): the only writer of synced state; constructed as `new UpdateSink(deps)`.
-- `runSweep(d: SweepDeps): Promise<SweepReport>` (`sweep.ts:48`), `toSnapshot(dialog)` (`sweep.ts:31`), `SweepDeps` `:6`, `SweepReport` `:14`.
+- `runSweep(d: SweepDeps): Promise<SweepReport>` (`sweep.ts:55`), `toSnapshot(dialog)` (`sweep.ts:38`), `SweepDeps` `:6`, `SweepReport` `:14` (includes `purgeSkipped`).
 - `backfillPage(d, chatId, pageSize?)` (`backfill.ts:22`), `readHistory(d, chatId, { limit, beforeId? })` (`backfill.ts:40`), `backfillFullChats(d)` (`backfill.ts:59`), `BackfillDeps` `:9`.
 
 ## Key methods
@@ -32,7 +32,7 @@ Keeps the local store mirroring Telegram: applies live updates (new/edit/delete/
 - `onDelete(e)` (`update-sink.ts:71`): soft-deletes by channel id, or across non-channel chats when `channelId` is null, and recomputes the top if it was deleted.
 - `onRead(e)` (`update-sink.ts:90`): updates read cursors/unread; ignores chats not yet known.
 
-- `runSweep` (`sweep.ts:48`): iterates dialogs; per dialog `syncDialog` (`sweep.ts:84`) ensures the chat, fetches the delta after the stored top via `fetchDelta` (`sweep.ts:108`: pages backward 100 at a time, at most `MAX_DELTA_PAGES` = 10; never for `muted` chats or first sight, which store only the top), then applies the Telegram snapshot (monotonic top/read positions). One dialog failing is logged and counted, not fatal. Chats absent from the pass are purged only when the whole iteration completed and the chat wasn't touched since the sweep began (`sweep.ts:75`, `touchedSince` `:101`); `iterationError` carries `AUTH_REQUIRED` for a revoked session.
+- `runSweep` (`sweep.ts:55`): iterates dialogs; per dialog `syncDialog` (`sweep.ts:97`) ensures the chat, fetches the delta after the stored top via `fetchDelta` (`sweep.ts:121`: pages backward 100 at a time, at most `MAX_DELTA_PAGES` = 10; never for `muted` chats or first sight, which store only the top), then applies the Telegram snapshot (monotonic top/read positions). One dialog failing is logged and counted, not fatal. Chats absent from the pass are purged only when the whole iteration completed and the chat wasn't touched since the sweep began (`purgeMissing`, `sweep.ts:84`; `touchedSince` `:114`). A sanity guard (`:88`) then skips the purge entirely, sets `purgeSkipped: true` and logs `sweep: purge skipped (would remove X of Y chats)` (counts only) when the pass saw no dialogs at all or the purge would remove more than max(5, 25% of stored chats) (`PURGE_MIN_CAP` / `PURGE_MAX_SHARE`, `:35-36`): that pattern is far likelier a glitchy dialog list than real deletions, and a purge can't be undone. `purgeSkipped` reaches Claude through `status.lastSweep`; `iterationError` carries `AUTH_REQUIRED` for a revoked session.
 - `backfillPage` (`backfill.ts:22`): fetches one page older than the cursor (or oldest stored message), stores it through the sink, and saves the cursor; a short page marks `backfillComplete`.
 - `readHistory` (`backfill.ts:40`): `NOT_FOUND` for unknown chats; muted chats read straight from Telegram without storing; otherwise serves from the store and backfills up to 5 pages (`MAX_PAGES_PER_READ`) when short.
 - `backfillFullChats` (`backfill.ts:59`): one page for each `full` chat whose backfill isn't complete; per-chat failures are logged.
@@ -59,4 +59,4 @@ Keeps the local store mirroring Telegram: applies live updates (new/edit/delete/
 
 ## Testing
 
-- `pnpm test src/sync`: `update-sink.test.ts`, `sweep.test.ts` and `backfill.test.ts` run against an in-memory DB via `makeStore()`/`makeSink()` from `src/testing/fixtures.ts` (synthetic data only).
+- `pnpm test src/sync`: `update-sink.test.ts`, `sweep.test.ts` and `backfill.test.ts` run against an in-memory DB via `makeStore()`/`makeSink()` from `src/testing/fixtures.ts` (synthetic data only). `sweep.test.ts` covers both purge-guard triggers (no dialogs seen; more than max(5, 25%)) and a small purge of exactly 5 still going through.
