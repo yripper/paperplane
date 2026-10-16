@@ -21,7 +21,8 @@ export function acquireLock(path: string, pid: number = process.pid): { release(
   } catch (e) {
     if (!hasCode(e, 'EEXIST')) throw e;
     const holder = Number(readFileSync(path, 'utf8'));
-    if (Number.isInteger(holder) && holder !== pid && isAlive(holder)) {
+    // pid 0 (empty/garbage file) would make kill(0, 0) report "alive" forever.
+    if (Number.isInteger(holder) && holder > 0 && holder !== pid && isAlive(holder)) {
       throw new AppError('INTERNAL', `paperplane is already running (pid ${holder}); stop it first (pm2 stop paperplane)`);
     }
     writeFileSync(path, String(pid), { mode: 0o600 }); // stale lock from a crash

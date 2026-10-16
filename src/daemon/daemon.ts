@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import type { ActionDeps } from '../actions/context.js';
-import { loadConfig, requireApiId } from '../config/config.js';
-import { ensureHome, resolvePaths } from '../config/paths.js';
-import { AppError, describeError } from '../domain/errors.js';
+import { type Config, loadConfig } from '../config/config.js';
+import { type AppPaths, ensureHome, resolvePaths } from '../config/paths.js';
+import { describeError } from '../domain/errors.js';
 import { PerKeyGap, RateLimiter } from '../domain/rate-limiter.js';
 import { startHttpServer } from '../mcp/http.js';
 import { buildServer, type StatusReport } from '../mcp/server.js';
-import { Keychain, SECRET_ACCOUNTS } from '../secrets/keychain.js';
+import { Keychain, SECRET_ACCOUNTS, type SecretStore } from '../secrets/keychain.js';
 import { AuditRepo } from '../store/audit-repo.js';
 import { ChatsRepo } from '../store/chats-repo.js';
 import { CleanupPlansRepo } from '../store/cleanup-plans-repo.js';
@@ -18,29 +18,83 @@ import { backfillFullChats, type BackfillDeps } from '../sync/backfill.js';
 import { runSweep, type SweepReport } from '../sync/sweep.js';
 import { UpdateSink } from '../sync/update-sink.js';
 import { KeychainAuthKeys } from '../telegram/keychain-auth-keys.js';
-import { createSession } from '../telegram/session.js';
+import type { TelegramGateway } from '../telegram/types.js';
+import { createSession, type Session } from '../telegram/session.js';
+import { decideAuthMode } from './auth-mode.js';
 import { acquireLock } from './lock.js';
-import { createLogger } from './logger.js';
+import { createLogger, type Logger } from './logger.js';
 import { startNonOverlappingLoop } from './loop.js';
 import { ensureBearerToken } from './token.js';
+import { createUnauthenticatedGateway } from './unauthenticated-gateway.js';
 
 const nowSec = (): number => Math.floor(Date.now() / 1000);
 const isoOrNull = (sec: number | null): string | null => (sec === null ? null : new Date(sec * 1000).toISOString());
 
-export async function startDaemon(): Promise<void> {
+// pm2's kill_timeout is 10 s; exit on our own just before it so a hung close
+// can't leave the process half-dead.
+const HARD_EXIT_MS = 8000;
+
+interface Resources {
+  stopLoop?: () => void;
+  http?: { close(): Promise<void> };
+  session?: Session;
+  db?: { close(): unknown };
+}
+
+/// `secrets` is injectable so smoke tests never touch the real Keychain.
+export async function startDaemon(secrets: SecretStore = new Keychain()): Promise<void> {
   const log = createLogger();
   const paths = resolvePaths();
   ensureHome(paths);
   const config = loadConfig(paths.config);
-  const apiId = requireApiId(config);
   const lock = acquireLock(paths.lock);
 
-  const keychain = new Keychain();
-  const apiHash = await keychain.get(SECRET_ACCOUNTS.apiHash);
-  if (!apiHash) throw new AppError('AUTH_REQUIRED', 'api_hash missing from Keychain: run `paperplane login`');
-  const token = await ensureBearerToken(keychain);
+  // Every resource is optional: handlers are registered before startup so a
+  // signal (or a startup failure) midway still releases whatever exists.
+  const res: Resources = {};
+  const cleanup = async (): Promise<void> => {
+    res.stopLoop?.();
+    await res.http?.close().catch((e: unknown) => log.warn(`http close failed: ${describeError(e)}`));
+    await res.session?.destroy().catch((e: unknown) => log.warn(`mtcute close failed: ${describeError(e)}`));
+    res.db?.close();
+  };
+  let stopping = false;
+  const shutdown = async (signal: string): Promise<void> => {
+    if (stopping) return;
+    stopping = true;
+    log.info(`${signal}: shutting down`);
+    setTimeout(() => process.exit(1), HARD_EXIT_MS).unref();
+    try {
+      await cleanup();
+    } catch (e) {
+      log.warn(`shutdown failed: ${describeError(e)}`);
+    } finally {
+      lock.release();
+      process.exit(0);
+    }
+  };
+  process.on('SIGINT', () => void shutdown('SIGINT'));
+  process.on('SIGTERM', () => void shutdown('SIGTERM'));
+
+  try {
+    await runDaemon(secrets, log, paths, config, res);
+  } catch (e) {
+    stopping = true;
+    await cleanup().catch(() => undefined);
+    lock.release();
+    throw e;
+  }
+}
+
+async function runDaemon(secrets: SecretStore, log: Logger, paths: AppPaths, config: Config, res: Resources): Promise<void> {
+  // A missing apiId/api_hash (before login, or after logout) must not exit:
+  // pm2 would crash-loop. Stay up in auth_required so `status` still answers.
+  const apiId = config.apiId;
+  const apiHash = apiId === undefined ? null : await secrets.get(SECRET_ACCOUNTS.apiHash);
+  const token = await ensureBearerToken(secrets);
 
   const db = openDb(paths.db);
+  res.db = db;
   const chats = new ChatsRepo(db);
   const messages = new MessagesRepo(db);
   const labels = new LabelsRepo(db);
@@ -54,27 +108,33 @@ export async function startDaemon(): Promise<void> {
     lastSweep: null,
   };
 
-  const session = createSession(
-    {
-      apiId,
-      apiHash,
-      mtcuteDbPath: paths.mtcuteDb,
-      authKeys: new KeychainAuthKeys(keychain),
-      log: (level, tag, fmt) => (level <= 1 ? log.error({ tag }, fmt) : log.warn({ tag }, fmt)),
-    },
-    sink,
-    {
-      onUpdate: () => {
-        state.lastUpdateAt = nowSec();
+  let gateway: TelegramGateway = createUnauthenticatedGateway();
+  const hasCredentials = decideAuthMode({ hasApiId: apiId !== undefined, hasApiHash: !!apiHash, connect: null }) === 'connect';
+  if (hasCredentials && apiId !== undefined && apiHash) {
+    const session = createSession(
+      {
+        apiId,
+        apiHash,
+        mtcuteDbPath: paths.mtcuteDb,
+        authKeys: new KeychainAuthKeys(secrets),
+        log: (level, tag, fmt) => (level <= 1 ? log.error({ tag }, fmt) : log.warn({ tag }, fmt)),
       },
-      onUpdateError: (what, e) => log.warn(`update ${what} failed: ${describeError(e)}`),
-      onClientError: (e) => log.error(`mtcute: ${describeError(e)}`),
-    },
-  );
-  const gateway = session.gateway;
-
-  state.auth = await session.connect();
-  if (state.auth === 'auth_required') log.error('not logged in: run `paperplane login`, then `pm2 restart paperplane`');
+      sink,
+      {
+        onUpdate: () => {
+          state.lastUpdateAt = nowSec();
+        },
+        onUpdateError: (what, e) => log.warn(`update ${what} failed: ${describeError(e)}`),
+        onClientError: (e) => log.error(`mtcute: ${describeError(e)}`),
+      },
+    );
+    // Kept even when not logged in, only so shutdown can destroy it.
+    res.session = session;
+    state.auth = decideAuthMode({ hasApiId: true, hasApiHash: true, connect: await session.connect() }) === 'ok' ? 'ok' : 'auth_required';
+    // Never call into an unauthorized mtcute client: it keeps the unauthenticated gateway.
+    if (state.auth === 'ok') gateway = session.gateway;
+  }
+  if (state.auth === 'auth_required') log.warn('not logged in: run `paperplane login`, then `pm2 restart paperplane`');
 
   const backfill: BackfillDeps = { gateway, chats, messages, cursors, sink };
   const syncOnce = async (): Promise<void> => {
@@ -90,12 +150,14 @@ export async function startDaemon(): Promise<void> {
     }
     await backfillFullChats({ ...backfill, log: (l) => log.warn(l) });
   };
-  // First sweep runs right away (it also seeds mtcute's peer cache) but in the
-  // background: with thousands of dialogs it can take minutes.
-  void syncOnce().catch((e: unknown) => log.warn(`initial sync failed: ${describeError(e)}`));
-  const stopLoop = startNonOverlappingLoop(syncOnce, config.sweepIntervalSec * 1000, (e) =>
-    log.warn(`sync failed: ${describeError(e)}`),
-  );
+  // The first sweep runs right away (it also seeds mtcute's peer cache) but in
+  // the background, under the loop's in-flight guard so it can't overlap the
+  // next tick: with thousands of dialogs it can take minutes.
+  if (state.auth === 'ok') {
+    res.stopLoop = startNonOverlappingLoop(syncOnce, config.sweepIntervalSec * 1000, (e) => log.warn(`sync failed: ${describeError(e)}`), {
+      immediate: true,
+    });
+  }
 
   const actions: ActionDeps = {
     gateway,
@@ -127,22 +189,6 @@ export async function startDaemon(): Promise<void> {
     log: (l) => log.warn(l),
     buildServer: () => buildServer({ actions, db, labels, backfill, status }),
   });
+  res.http = http;
   log.info(`paperplane listening on http://127.0.0.1:${http.port}/mcp (telegram auth: ${state.auth})`);
-
-  // A clean mtcute shutdown matters: an unclean storage close makes catchUp
-  // replay duplicates (harmless, but noisy). pm2's kill_timeout allows for it.
-  let stopping = false;
-  const shutdown = async (signal: string): Promise<void> => {
-    if (stopping) return;
-    stopping = true;
-    log.info(`${signal}: shutting down`);
-    stopLoop();
-    await http.close();
-    await session.destroy().catch((e: unknown) => log.warn(`mtcute close failed: ${describeError(e)}`));
-    db.close();
-    lock.release();
-    process.exit(0);
-  };
-  process.once('SIGINT', () => void shutdown('SIGINT'));
-  process.once('SIGTERM', () => void shutdown('SIGTERM'));
 }

@@ -27,4 +27,11 @@ describe('acquireLock', () => {
     acquireLock(path);
     expect(readFileSync(path, 'utf8')).toBe(String(process.pid));
   });
+
+  it.each(['', 'garbage', '0'])('takes over a lock file containing %j', (content) => {
+    const path = lockPath();
+    writeFileSync(path, content);
+    acquireLock(path);
+    expect(readFileSync(path, 'utf8')).toBe(String(process.pid));
+  });
 });

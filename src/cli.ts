@@ -42,6 +42,7 @@ async function runLogin(): Promise<void> {
     const apiId = config.apiId ?? Number(await ask('api_id (from https://my.telegram.org): '));
     if (!Number.isInteger(apiId) || apiId <= 0) throw new AppError('VALIDATION', 'api_id must be a positive integer');
     const apiHash = (await keychain.get(SECRET_ACCOUNTS.apiHash)) ?? (await ask('api_hash: ', true));
+    if (apiHash.trim() === '') throw new AppError('VALIDATION', 'api_hash must not be empty');
     await keychain.set(SECRET_ACCOUNTS.apiHash, apiHash);
     saveConfig(paths.config, { ...config, apiId });
 
