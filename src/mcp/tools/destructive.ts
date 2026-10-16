@@ -15,7 +15,7 @@ export function registerDestructiveTools(server: McpServer, d: ToolDeps): void {
       inputSchema: {
         chat_id: z.number().int(),
         mode: z.enum(['delete', 'clear', 'revoke']).default('delete'),
-        confirm_title: z.string().optional(),
+        confirm_title: z.string().max(256).optional(),
       },
       annotations: DESTRUCTIVE,
     },
@@ -41,9 +41,9 @@ export function registerDestructiveTools(server: McpServer, d: ToolDeps): void {
       description:
         'Step 1 of bulk cleanup: list chats matching ALL given criteria, without changing anything. At least one criterion is required. Full-watch chats are never included. Show the numbered list to the user, then call cleanup_apply with their exclusions. Plans expire after 30 minutes.',
       inputSchema: {
-        inactive_days: z.number().int().min(1).optional(),
-        types: z.array(z.enum(['user', 'bot', 'group', 'supergroup', 'channel'])).min(1).optional(),
-        min_unread: z.number().int().min(1).optional(),
+        inactive_days: z.number().int().min(1).max(3650).optional(),
+        types: z.array(z.enum(['user', 'bot', 'group', 'supergroup', 'channel'])).min(1).max(5).optional(),
+        min_unread: z.number().int().min(1).max(100000).optional(),
         muted_only: z.boolean().optional(),
         archived_only: z.boolean().optional(),
         mode: z.enum(['remove', 'archive']).default('remove'),
@@ -70,8 +70,8 @@ export function registerDestructiveTools(server: McpServer, d: ToolDeps): void {
   server.registerTool(
     'cleanup_apply',
     {
-      description: 'Step 2 of bulk cleanup: execute a plan from cleanup_plan, minus exclude_chat_ids. Single-use. Only call after the user approved the list.',
-      inputSchema: { plan_id: z.string().min(1), exclude_chat_ids: z.array(z.number().int()).optional() },
+      description: 'Step 2 of bulk cleanup: execute a plan from cleanup_plan, minus exclude_chat_ids. Single-use. Only call after the user approved the list. Returns {done, failed, skipped}: each failed entry has a code (NOT_FOUND = the chat is gone, FORBIDDEN = it was promoted to full watch since planning, otherwise the error code of the Telegram call); skipped = not attempted because of a rate limit or flood wait, so plan again for those.',
+      inputSchema: { plan_id: z.string().min(1).max(64), exclude_chat_ids: z.array(z.number().int()).max(1000).optional() },
       annotations: DESTRUCTIVE,
     },
     (a) => run(() => applyCleanupPlan(d.actions, a.plan_id, a.exclude_chat_ids ?? [])),

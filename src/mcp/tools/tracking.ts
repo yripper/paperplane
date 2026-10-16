@@ -18,7 +18,7 @@ export function registerTrackingTools(server: McpServer, d: ToolDeps): void {
       inputSchema: {
         chat_id: z.number().int(),
         label: z.enum(['snoozed', 'done', 'waiting']),
-        snooze_until: z.iso.datetime({ offset: true }).optional().describe('Required for snoozed, ISO 8601'),
+        snooze_until: z.iso.datetime({ offset: true }).max(40).optional().describe('Required for snoozed, ISO 8601'),
         note: z.string().max(500).optional(),
       },
       annotations: LOCAL_WRITE,
@@ -44,6 +44,7 @@ export function registerTrackingTools(server: McpServer, d: ToolDeps): void {
     { description: 'Remove a chat label so its status is automatic again.', inputSchema: { chat_id: z.number().int() }, annotations: LOCAL_WRITE },
     (a) =>
       run(() => {
+        requireChat(d.actions, a.chat_id);
         d.labels.clear(a.chat_id);
         return { ok: true };
       }),

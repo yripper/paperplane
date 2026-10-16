@@ -95,4 +95,31 @@ describe('MCP tools', () => {
     expect(res.isError).toBe(true);
     expect(res.text.startsWith('VALIDATION:')).toBe(true);
   });
+
+  it('rejects an oversized query with an input validation error', async () => {
+    const res = await call('search_messages', { query: 'x'.repeat(257) });
+    expect(res.isError).toBe(true);
+    expect(res.text).toContain('Input validation error');
+  });
+
+  it('formats FLOOD_WAIT with its retry hint', async () => {
+    t.gateway.failOn.set('sendText', new AppError('FLOOD_WAIT', 'x', 42));
+    const res = await call('send_message', { chat_id: 10, text: 'hello' });
+    expect(res.isError).toBe(true);
+    expect(res.text).toContain('FLOOD_WAIT');
+    expect(res.text).toContain('(retry after 42s)');
+  });
+
+  it('maps a plain Error to INTERNAL', async () => {
+    t.gateway.failOn.set('sendText', new Error('boom'));
+    const res = await call('send_message', { chat_id: 10, text: 'hello' });
+    expect(res.isError).toBe(true);
+    expect(res.text.startsWith('INTERNAL:')).toBe(true);
+  });
+
+  it('clear_label returns NOT_FOUND for an unknown chat', async () => {
+    const res = await call('clear_label', { chat_id: 999 });
+    expect(res.isError).toBe(true);
+    expect(res.text.startsWith('NOT_FOUND:')).toBe(true);
+  });
 });

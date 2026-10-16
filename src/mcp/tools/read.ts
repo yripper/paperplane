@@ -30,9 +30,9 @@ export function registerReadTools(server: McpServer, d: ToolDeps): void {
         watch_level: watchLevel.optional(),
         unread_only: z.boolean().optional(),
         archived: z.boolean().optional(),
-        query: z.string().min(1).optional().describe('Case-insensitive match on title or username'),
+        query: z.string().min(1).max(256).optional().describe('Case-insensitive match on title or username'),
         limit: z.number().int().min(1).max(200).default(50),
-        offset: z.number().int().min(0).default(0),
+        offset: z.number().int().min(0).max(100000).default(0),
       },
       annotations: READ,
     },
@@ -64,7 +64,7 @@ export function registerReadTools(server: McpServer, d: ToolDeps): void {
         limit: z.number().int().min(1).max(200).default(50),
         before_id: z.number().int().positive().optional(),
       },
-      annotations: READ,
+      annotations: { ...READ, openWorldHint: true },
     },
     (a) => run(async () => (await readHistory(d.backfill, a.chat_id, { limit: a.limit, beforeId: a.before_id })).map(formatMessage)),
   );
@@ -74,12 +74,12 @@ export function registerReadTools(server: McpServer, d: ToolDeps): void {
     {
       description: 'Full-text search over mirrored messages (words matched literally). Set remote=true to search Telegram itself, which covers history that was never mirrored.',
       inputSchema: {
-        query: z.string().min(1),
+        query: z.string().min(1).max(256),
         chat_id: chatId.optional(),
         limit: z.number().int().min(1).max(100).default(30),
         remote: z.boolean().default(false),
       },
-      annotations: READ,
+      annotations: { ...READ, openWorldHint: true },
     },
     (a) =>
       run(async () => {

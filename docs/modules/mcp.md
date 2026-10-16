@@ -28,8 +28,8 @@ The MCP server Claude talks to: Streamable HTTP on `127.0.0.1`, bearer-token aut
 | `status` | read | R | Auth state, last update/sweep, store size |
 | `list_chats` | read | R | Filtered chat list from the mirror |
 | `get_pending` | read | R | Chats waiting on my reply |
-| `read_history` | read | R | Messages newest first, backfills from Telegram if short |
-| `search_messages` | read | R | FTS over the mirror, or `remote=true` via gateway |
+| `read_history` | read | R (open world) | Messages newest first, backfills from Telegram if short |
+| `search_messages` | read | R (open world) | FTS over the mirror, or `remote=true` via gateway |
 | `get_chat_info` | read | R | One chat with effective status and label |
 | `set_label` | tracking | LW | done / waiting / snoozed (needs `snooze_until`) |
 | `clear_label` | tracking | LW | Remove a label |
@@ -72,4 +72,4 @@ Errors come back as `isError: true` with text `CODE: message` (plus `(retry afte
 
 ## Testing
 
-`src/mcp/server.test.ts` drives every tool through an in-memory MCP client (`connect` and `makeToolDeps` in `src/testing/tool-deps.ts`) against `FakeGateway` and an in-memory store. `src/mcp/format.test.ts` covers the view mappers.
+`src/mcp/server.test.ts` uses an in-memory MCP client (`connect` and `makeToolDeps` in `src/testing/tool-deps.ts`) against `FakeGateway` and an in-memory store. It covers: the tool list and annotations, `get_pending`, `read_history`, `search_messages`, `send_message` (success, empty text, `AUTH_REQUIRED`, `FLOOD_WAIT`, plain `Error` as `INTERNAL`), `delete_chat` revoke without confirmation, `set_label` and `clear_label`, `cleanup_plan` (including rejection of criteria that narrow nothing) and `cleanup_apply`, and oversized-input rejection. Not covered: `status`, `list_chats`, `get_chat_info`, `set_watch_level`, `save_draft`, `mark_read`, the folder tools, archive/mute tools, `leave_chat`, `block_user`. `src/mcp/format.test.ts` covers `formatMessage`.
