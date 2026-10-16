@@ -2,7 +2,7 @@
 
 > **Living document.** Read this before modifying the module. Update it in the same change whenever the module's behavior, public surface, files, or dependencies change.
 
-**Source:** `src/store/` · **Last verified:** 2026-10-16 (schema layer, chats/messages/labels/cursors/audit/cleanup-plans repositories and pending query implemented)
+**Source:** `src/store/` · **Last verified:** 2026-10-16 (FTS control-character stripping)
 
 ## Purpose
 
@@ -32,7 +32,7 @@ Paperplane's own SQLite database at `~/.paperplane/paperplane.db` (better-sqlite
 - `MIGRATIONS`: `src/store/schema.ts:3`
 - Row types `ChatType`, `WatchLevel`, `LabelKind`, `ChatRow`, `MessageRow`, `ChatLabel`: `src/store/types.ts:1-43`. Row types use camelCase and booleans; SQL columns are snake_case with 0/1 integers, so repositories must map.
 - `ChatsRepo`: `src/store/chats-repo.ts:54`. Helpers `rowToChat` `:33` (exported for pending-query), `ChatSeed` `:4`, `DialogSnapshot` `:11`, `ChatFilter` `:23`.
-- `MessagesRepo`: `src/store/messages-repo.ts:29`.
+- `MessagesRepo`: `src/store/messages-repo.ts:34`.
 - `CursorsRepo`: `src/store/cursors-repo.ts:9`; `SyncCursor` `:3`.
 - `LabelsRepo`: `src/store/labels-repo.ts:14`; `rowToLabel` `:4`.
 - `AuditRepo`: `src/store/audit-repo.ts:4`; `CleanupPlansRepo`: `src/store/cleanup-plans-repo.ts:22`; `CleanupItem` `:5`, `CleanupPlan` `:12`.
@@ -60,12 +60,12 @@ Paperplane's own SQLite database at `~/.paperplane/paperplane.db` (better-sqlite
 - All timestamps are unix seconds.
 - Separate from mtcute's own `mtcute.db`. Never read or write mtcute's tables.
 - The audit log stores metadata only. Never message text or secrets.
-- `sent_via_paperplane` must never be downgraded on re-upsert (a later live update for the same message reports it as a normal outgoing message). `MessagesRepo.upsert` enforces it with `MAX(...)` (`messages-repo.ts:39`).
+- `sent_via_paperplane` must never be downgraded on re-upsert (a later live update for the same message reports it as a normal outgoing message). `MessagesRepo.upsert` enforces it with `MAX(...)` (`messages-repo.ts:44`).
 - Upserts must use `ON CONFLICT ... DO UPDATE`, never `INSERT OR REPLACE`: REPLACE deletes the old row without firing the FTS delete trigger (`recursive_triggers` is off), leaving stale `messages_fts` rows.
 - Soft-deleted messages stay in `messages_fts`, so every read must filter `deleted_at IS NULL` (`history`, `latestAlive`, `search` do).
 - `bumpTop` and read positions (`setReadInbox`, `setReadOutbox`, `applySnapshot`) are monotonic: late duplicates must not roll them back. Use `setTop` for the unconditional case (top message deleted).
 - `ChatsRepo.ensure` never touches `watch_level` after first insert.
-- FTS queries are token-quoted by `toFtsQuery` (`messages-repo.ts:24`) so FTS5 operators are matched literally; an empty query returns `[]`.
+- FTS queries are token-quoted by `toFtsQuery` (`messages-repo.ts:27`) so FTS5 operators are matched literally; an empty query returns `[]`. C0 control characters (except the whitespace ones the split uses) and DEL are stripped first (`:29`): FTS5 reads a NUL as end of string even inside quotes and throws `unterminated string`. Search never throws on user input.
 - Non-channel deletions are account-global: Telegram omits the chat id, so `softDeleteNonChannel` matches by `msg_id` across all chats with id above the channel bound.
 
 ## Testing

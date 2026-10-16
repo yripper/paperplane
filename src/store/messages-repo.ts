@@ -21,8 +21,13 @@ function rowToMessage(r: Record<string, unknown>): MessageRow {
 
 /// Quote every token so Claude's search text is matched literally: raw FTS5
 /// syntax (quotes, parens, OR, NEAR, *, -) would otherwise throw SQL errors.
+/// C0 control characters are stripped first: SQLite's FTS5 parser treats a
+/// NUL as end of string even inside quotes ("unterminated string").
+/// Tab/LF/VT/FF/CR are left for the whitespace split.
 function toFtsQuery(query: string): string | null {
-  const tokens = query.split(/\s+/).filter(Boolean);
+  // eslint-disable-next-line no-control-regex -- matching control characters is the point
+  const cleaned = query.replace(/[\u0000-\u0008\u000e-\u001f\u007f]/g, '');
+  const tokens = cleaned.split(/\s+/).filter(Boolean);
   return tokens.length ? tokens.map((t) => `"${t.replace(/"/g, '""')}"`).join(' ') : null;
 }
 

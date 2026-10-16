@@ -77,9 +77,10 @@ describe('MessagesRepo', () => {
 
   it('treats FTS operators in the query literally', () => {
     repo.upsert(msg({ text: 'say "hi" (now) OR later*' }));
-    for (const q of ['"hi"', '(now)', 'OR', 'later*', '-x', 'a"b', 'NEAR(', '']) {
+    for (const q of ['"hi"', '(now)', 'OR', 'later*', '-x', 'a"b', 'NEAR(', '', 'a\0b', '\0', 'x\u0001\u001fy', '\u0007']) {
       expect(() => repo.search(q, { limit: 10 })).not.toThrow();
     }
     expect(repo.search('(now)', { limit: 10 })).toHaveLength(1);
+    expect(repo.search('n\0ow', { limit: 10 })).toHaveLength(1);
   });
 });
