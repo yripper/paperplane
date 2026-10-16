@@ -49,7 +49,7 @@ async function runLogin(): Promise<void> {
     const name = await login(
       { apiId, apiHash, mtcuteDbPath: paths.mtcuteDb, authKeys: new KeychainAuthKeys(keychain), log: () => {} },
       {
-        phone: () => ask('phone number (international format, e.g. +56…): '),
+        phone: () => ask('phone number (international format, e.g. +1…): '),
         code: () => ask('login code (sent to your Telegram app): '),
         password: () => ask('2FA password: ', true),
       },
