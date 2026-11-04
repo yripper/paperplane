@@ -161,6 +161,7 @@ async function runDaemon(secrets: SecretStore, log: Logger, paths: AppPaths, con
       destructive: new RateLimiter(config.destructivePerMinute, 60_000),
     },
     now: nowSec,
+    mediaDir: paths.media,
     newId: () => randomUUID(),
     sleep: (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
   };

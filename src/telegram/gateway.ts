@@ -1,8 +1,8 @@
-import { getMarkedPeerId, type TelegramClient, type tl } from '@mtcute/node';
+import { getMarkedPeerId, type Message, type TelegramClient, type tl } from '@mtcute/node';
 import { AppError } from '../domain/errors.js';
 import { adaptDialog, adaptMessage, adaptSender } from './adapt.js';
 import { mapTelegramError } from './errors.js';
-import type { DeleteMode, TelegramGateway, TgDialog, TgFolder, TgMessage, TgSender } from './types.js';
+import type { DeleteMode, TelegramGateway, TgDialog, TgFolder, TgMedia, TgMessage, TgSender } from './types.js';
 
 // INT32_MAX: Telegram's conventional "muted forever".
 const MUTE_FOREVER = 2_147_483_647;
@@ -23,6 +23,13 @@ function peerIdOf(p: tl.TypeInputPeer): number | null {
     return null; // inputPeerSelf / inputPeerEmpty have no marked id
   }
 }
+
+/// Media kinds that carry a file. Polls, locations, contacts, web pages etc.
+/// have nothing to download.
+const DOWNLOADABLE = new Set(['photo', 'voice', 'audio', 'video', 'document', 'sticker']);
+type MessageMedia = NonNullable<Message['media']>;
+type DownloadableMedia = Extract<MessageMedia, { type: 'photo' | 'voice' | 'audio' | 'video' | 'document' | 'sticker' }>;
+const isDownloadable = (m: MessageMedia): m is DownloadableMedia => DOWNLOADABLE.has(m.type);
 
 function adaptFolder(f: tl.RawDialogFilter): TgFolder {
   return {
@@ -167,6 +174,40 @@ export class MtcuteGateway implements TelegramGateway {
 
   leaveChat(chatId: number): Promise<void> {
     return this.guard(() => this.tg.leaveChat(chatId));
+  }
+
+  /// Basic groups and channels/supergroups use different raw calls
+  /// (messages.deleteChat vs channels.deleteChannel), so branch on the peer.
+  deleteGroup(chatId: number): Promise<void> {
+    return this.guard(async () => {
+      const peer = await this.tg.resolvePeer(chatId);
+      if (peer._ === 'inputPeerChat') return this.tg.deleteGroup(chatId);
+      if (peer._ === 'inputPeerChannel' || peer._ === 'inputPeerChannelFromMessage') return this.tg.deleteChannel(chatId);
+      throw new AppError('VALIDATION', 'only groups, supergroups and channels can be deleted for everyone');
+    });
+  }
+
+  /// Fetches the message fresh rather than reusing a stored file reference:
+  /// those expire, and the store doesn't keep them anyway.
+  downloadMedia(chatId: number, messageId: number, maxBytes: number): Promise<TgMedia> {
+    return this.guard(async () => {
+      const [msg] = await this.tg.getMessages(chatId, [messageId]);
+      if (!msg) throw new AppError('NOT_FOUND', `message ${messageId} not found in chat ${chatId}`);
+      const media = msg.media;
+      if (!media) throw new AppError('NOT_FOUND', `message ${messageId} has no media`);
+      if (!isDownloadable(media)) throw new AppError('VALIDATION', `${media.type} media has no file to download`);
+      // fileSize can be missing; then the post-download check below catches it.
+      if ((media.fileSize ?? 0) > maxBytes) throw new AppError('VALIDATION', `file is larger than ${maxBytes} bytes`);
+      const bytes = await this.tg.downloadAsBuffer(media);
+      if (bytes.length > maxBytes) throw new AppError('VALIDATION', `file is larger than ${maxBytes} bytes`);
+      return {
+        kind: media.type,
+        // Telegram re-encodes every photo as JPEG.
+        mimeType: media.type === 'photo' ? 'image/jpeg' : media.mimeType,
+        fileName: media.type === 'photo' ? null : media.fileName,
+        bytes,
+      };
+    });
   }
 
   blockUser(userId: number): Promise<void> {

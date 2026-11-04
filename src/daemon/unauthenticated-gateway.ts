@@ -33,6 +33,8 @@ export function createUnauthenticatedGateway(message: string = NOT_LOGGED_IN): T
     setMuted: reject,
     deleteChat: reject,
     leaveChat: reject,
+    deleteGroup: reject,
+    downloadMedia: reject,
     blockUser: reject,
     getUsers: reject,
   };

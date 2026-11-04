@@ -18,6 +18,8 @@ describe('createUnauthenticatedGateway', () => {
     setMuted: () => g.setMuted(1, true),
     deleteChat: () => g.deleteChat(1, 'delete'),
     leaveChat: () => g.leaveChat(1),
+    deleteGroup: () => g.deleteGroup(1),
+    downloadMedia: () => g.downloadMedia(1, 1, 1),
     blockUser: () => g.blockUser(1),
     getUsers: () => g.getUsers([1]),
   };

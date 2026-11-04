@@ -22,6 +22,8 @@ export function createSwitchableGateway(initial: TelegramGateway): { gateway: Te
     setMuted: (chatId, muted) => current.setMuted(chatId, muted),
     deleteChat: (chatId, mode) => current.deleteChat(chatId, mode),
     leaveChat: (chatId) => current.leaveChat(chatId),
+    deleteGroup: (chatId) => current.deleteGroup(chatId),
+    downloadMedia: (chatId, messageId, maxBytes) => current.downloadMedia(chatId, messageId, maxBytes),
     blockUser: (userId) => current.blockUser(userId),
     getUsers: (userIds) => current.getUsers(userIds),
   };

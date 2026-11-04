@@ -2,7 +2,7 @@
 
 > **Living document.** Read this before modifying the module. Update it in the same change whenever the module's behavior, public surface, files, or dependencies change.
 
-**Source:** `src/telegram/` · **Last verified:** 2026-10-16 (message senders, hidden links, `getUsers`)
+**Source:** `src/telegram/` · **Last verified:** 2026-11-05 (`deleteGroup`, `downloadMedia`)
 
 ## Purpose
 
@@ -22,14 +22,14 @@ The only module that imports mtcute. Owns the MTProto user client (login, live u
 
 ## Public surface
 
-- `TelegramGateway` (`src/telegram/types.ts:56`): the module's contract. Everything outside `src/telegram` uses it, never mtcute. `getHistory` returns newest first. Test double: `FakeGateway` (`src/testing/fake-gateway.ts`).
-- Plain types (`types.ts:3-51`): `TgPeer`, `TgMessage`, `TgDialog`, `TgFolder`, `TgDeleteEvent`, `TgReadEvent`, `DeleteMode`.
+- `TelegramGateway` (`src/telegram/types.ts:73`): the module's contract. Everything outside `src/telegram` uses it, never mtcute. `getHistory` returns newest first. Test double: `FakeGateway` (`src/testing/fake-gateway.ts`).
+- Plain types (`types.ts:3-71`): `TgPeer`, `TgMessage`, `TgDialog`, `TgFolder`, `TgDeleteEvent`, `TgReadEvent`, `DeleteMode`, `TgMedia` (`:63`: kind, mimeType, fileName, bytes).
 - `createSession(o, sink, hooks)` (`session.ts:29`): the daemon's single connection; returns `{ gateway, connect, destroy }`. `login` (`session.ts:70`) and `logout` (`session.ts:82`) are the CLI flows; they build the client with updates disabled and rethrow mapped errors. `connect()` returns `'auth_required'` instead of prompting.
-- `MtcuteGateway` (`gateway.ts:36`): `TelegramGateway` over a `TelegramClient`. `createTelegramClient` (`client.ts:16`) builds that client.
+- `MtcuteGateway` (`gateway.ts:43`): `TelegramGateway` over a `TelegramClient`. `createTelegramClient` (`client.ts:16`) builds that client.
 - `mapTelegramError` (`errors.ts:16`): `AppError` passes through, everything else is mapped or wrapped as `INTERNAL`.
 - Adapters (`adapt.ts:9`, `:15`, `:48`, `:53`, `:67`): `mapChatType`, `adaptPeer`, `adaptSender`, `adaptMessage`, `adaptDialog`. `inlineLinks(text, links)` (`adapt.ts:29`) rewrites hidden hyperlinks as markdown.
 - `TgMessage.sender: TgSender | null` (`types.ts`): id, display name, username, bot flag. A user, or a chat when a channel or anonymous admin posts.
-- `getUsers(userIds)` (`gateway.ts:178`): looks up users by id; drops ones mtcute can't resolve.
+- `getUsers(userIds)` (`gateway.ts:219`): looks up users by id; drops ones mtcute can't resolve.
 - `KeychainAuthKeys` (`src/telegram/keychain-auth-keys.ts:13`): `IAuthKeysRepository` implementation, constructed as `new KeychainAuthKeys(secrets: SecretStore)`.
 
 ## Key methods
@@ -39,11 +39,13 @@ The only module that imports mtcute. Owns the MTProto user client (login, live u
 - `setTemp` / `getTemp` (`keychain-auth-keys.ts:33`, `:38`): temp (PFS) keys, memory only; `getTemp` returns `null` once `expires <= now`.
 - `deleteByDc(dc)` (`keychain-auth-keys.ts:43`): removes the permanent key and that DC's temp keys.
 - `deleteAll()` (`keychain-auth-keys.ts:48`): clears DCs 1-5 (`DC_IDS`, `:6`) and all temp keys.
-- `iterDialogs` (`gateway.ts:47`): passes `archived: 'keep'`; the sweep depends on archived chats appearing.
-- `getHistory` (`gateway.ts:56`): `beforeId` becomes an exclusive offset, `afterId` an exclusive `minId`.
-- `createFolder` / `editFolder` (`gateway.ts:92`, `:106`): reject an empty include list with `VALIDATION` (Telegram would answer `FILTER_INCLUDE_EMPTY`).
-- `setMuted` (`gateway.ts:138`): raw `account.updateNotifySettings` with `muteUntil` INT32_MAX (or 0).
-- `deleteChat` (`gateway.ts:154`): raw `messages.deleteHistory` (`maxId: 0`, `justClear` for `clear`, `revoke` for `revoke`) repeated while `affectedHistory.offset > 0`, capped at `DELETE_HISTORY_MAX_CALLS` = 200 (`:11`, then `INTERNAL`). After each call it hands mtcute a dummy pts update via `handleClientUpdate` (`dummyUpdate`, `:15`), with the channel id for channel peers, exactly as mtcute's own `deleteHistory` does.
+- `iterDialogs` (`gateway.ts:54`): passes `archived: 'keep'`; the sweep depends on archived chats appearing.
+- `getHistory` (`gateway.ts:63`): `beforeId` becomes an exclusive offset, `afterId` an exclusive `minId`.
+- `createFolder` / `editFolder` (`gateway.ts:99`, `:113`): reject an empty include list with `VALIDATION` (Telegram would answer `FILTER_INCLUDE_EMPTY`).
+- `setMuted` (`gateway.ts:145`): raw `account.updateNotifySettings` with `muteUntil` INT32_MAX (or 0).
+- `deleteChat` (`gateway.ts:161`): raw `messages.deleteHistory` (`maxId: 0`, `justClear` for `clear`, `revoke` for `revoke`) repeated while `affectedHistory.offset > 0`, capped at `DELETE_HISTORY_MAX_CALLS` = 200 (`:11`, then `INTERNAL`). After each call it hands mtcute a dummy pts update via `handleClientUpdate` (`dummyUpdate`, `:15`), with the channel id for channel peers, exactly as mtcute's own `deleteHistory` does.
+- `deleteGroup` (`gateway.ts:181`): resolves the peer and calls mtcute `deleteGroup` for `inputPeerChat` (basic group) or `deleteChannel` for channel peers (supergroups, channels); a user peer is `VALIDATION`. Telegram answers non-owners with `CHAT_ADMIN_REQUIRED` (code 400), which `errors.ts:28` maps to `FORBIDDEN`.
+- `downloadMedia(chatId, messageId, maxBytes)` (`gateway.ts:192`): fetches the message fresh with `getMessages` (file references expire and the store doesn't keep them), then `downloadAsBuffer`. Missing message or no media = `NOT_FOUND`; media without a file (poll, location, contact, web page...) = `VALIDATION` (allowed kinds: `DOWNLOADABLE`, `:29`); a known `fileSize` above `maxBytes` is refused before downloading, and the byte length is checked again after. Photos report `image/jpeg` and no file name.
 - `createSession` handlers (`session.ts:31-48`): each update runs in a try/catch and reports through `hooks.onUpdateError`; thread read receipts are dropped (`session.ts:42-47`).
 - `logout` (`session.ts:82`): if `logOut` fails with `AUTH_REQUIRED` (already revoked), it calls `tg.storage.clear(true)` to drop the stale Keychain key and returns normally.
 
@@ -78,8 +80,9 @@ The only module that imports mtcute. Owns the MTProto user client (login, live u
 - Mute uses INT32_MAX as "forever": a convention, still to be verified in the live smoke test.
 - Update handlers never throw into mtcute: one bad update must not stop the stream.
 - Revocation surfaces as `AppError('AUTH_REQUIRED')` (the sweep relies on this); non-`AppError` failures become `INTERNAL`.
+- `downloadAsBuffer` loads the whole file into memory, hence the caller's `maxBytes` cap.
 - `client.ts`, `gateway.ts` and `session.ts` are covered by typecheck only; they need a live smoke test (no network in unit tests).
 
 ## Testing
 
-- `pnpm test src/telegram`: `KeychainAuthKeys` tests run against `MemorySecretStore`; never touch the real Keychain. `errors.test.ts` and `adapt.test.ts` cover error mapping, `mapChatType` and `inlineLinks` (multiple links, UTF-16 offsets). `gateway.test.ts` drives `deleteChat` and `getUsers` (batch, per-id fallback, empty list) against a minimal fake client (`resolvePeer`, `call`, `handleClientUpdate`): looping on `offset`, mode flags, the dummy pts updates (incl. channel id), the 200-call cap and error mapping.
+- `pnpm test src/telegram`: `KeychainAuthKeys` tests run against `MemorySecretStore`; never touch the real Keychain. `errors.test.ts` and `adapt.test.ts` cover error mapping, `mapChatType` and `inlineLinks` (multiple links, UTF-16 offsets). `gateway.test.ts` drives `deleteChat` and `getUsers` (batch, per-id fallback, empty list) against a minimal fake client (`resolvePeer`, `call`, `handleClientUpdate`): looping on `offset`, mode flags, the dummy pts updates (incl. channel id), the 200-call cap and error mapping. `deleteGroup` (basic group vs channel branch, user refused, `CHAT_ADMIN_REQUIRED` → `FORBIDDEN`) and `downloadMedia` (voice mime, photo as JPEG, missing message / no media, poll refused, size cap before download) run against fake clients too.

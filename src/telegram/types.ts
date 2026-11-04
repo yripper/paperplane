@@ -58,6 +58,15 @@ export interface TgReadEvent {
 
 export type DeleteMode = 'delete' | 'clear' | 'revoke';
 
+/// A message's attached file. kind is mtcute's media type (photo, voice,
+/// audio, video, document, sticker).
+export interface TgMedia {
+  kind: string;
+  mimeType: string | null;
+  fileName: string | null;
+  bytes: Uint8Array;
+}
+
 /// Everything outside src/telegram talks to Telegram through this interface,
 /// so sync, actions and MCP are testable with FakeGateway and never import
 /// mtcute. getHistory returns newest first.
@@ -77,6 +86,10 @@ export interface TelegramGateway {
   setMuted(chatId: number, muted: boolean): Promise<void>;
   deleteChat(chatId: number, mode: DeleteMode): Promise<void>;
   leaveChat(chatId: number): Promise<void>;
+  /** Deletes a group, supergroup or channel for every member. Owner only. */
+  deleteGroup(chatId: number): Promise<void>;
+  /** Refuses files above maxBytes before downloading them. */
+  downloadMedia(chatId: number, messageId: number, maxBytes: number): Promise<TgMedia>;
   blockUser(userId: number): Promise<void>;
   /** Users mtcute can't resolve are left out; the result may be shorter than `userIds`. */
   getUsers(userIds: number[]): Promise<TgSender[]>;

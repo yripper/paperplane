@@ -100,3 +100,87 @@ describe('MtcuteGateway.getUsers', () => {
     expect(f.batches).toEqual([]);
   });
 });
+
+describe('MtcuteGateway.deleteGroup', () => {
+  const fakeDeletes = (peer: tl.TypeInputPeer) => {
+    const calls: string[] = [];
+    const client = {
+      resolvePeer: async () => peer,
+      deleteGroup: async () => void calls.push('deleteGroup'),
+      deleteChannel: async () => void calls.push('deleteChannel'),
+    };
+    return { gateway: new MtcuteGateway(client as unknown as TelegramClient), calls };
+  };
+
+  it('deletes a basic group with deleteGroup', async () => {
+    const f = fakeDeletes({ _: 'inputPeerChat', chatId: 42 });
+    await f.gateway.deleteGroup(-42);
+    expect(f.calls).toEqual(['deleteGroup']);
+  });
+
+  it('deletes supergroups and channels with deleteChannel', async () => {
+    const f = fakeDeletes({ _: 'inputPeerChannel', channelId: 7, accessHash: Long.ZERO });
+    await f.gateway.deleteGroup(-1000000000007);
+    expect(f.calls).toEqual(['deleteChannel']);
+  });
+
+  it('refuses users', async () => {
+    const f = fakeDeletes({ _: 'inputPeerUser', userId: 5, accessHash: Long.ZERO });
+    await expect(f.gateway.deleteGroup(5)).rejects.toMatchObject({ code: 'VALIDATION' });
+    expect(f.calls).toEqual([]);
+  });
+
+  it('maps CHAT_ADMIN_REQUIRED (not the owner) to FORBIDDEN', async () => {
+    const client = {
+      resolvePeer: async () => ({ _: 'inputPeerChat', chatId: 42 }),
+      deleteGroup: async () => {
+        throw new tl.RpcError(400, 'CHAT_ADMIN_REQUIRED');
+      },
+    };
+    const gateway = new MtcuteGateway(client as unknown as TelegramClient);
+    await expect(gateway.deleteGroup(-42)).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+});
+
+describe('MtcuteGateway.downloadMedia', () => {
+  const fakeMedia = (message: unknown) => {
+    const downloads: unknown[] = [];
+    const client = {
+      getMessages: async () => [message],
+      downloadAsBuffer: async (loc: unknown) => {
+        downloads.push(loc);
+        return new Uint8Array([1, 2, 3]);
+      },
+    };
+    return { gateway: new MtcuteGateway(client as unknown as TelegramClient), downloads };
+  };
+
+  it('downloads a voice note with its mime type', async () => {
+    const voice = { type: 'voice', mimeType: 'audio/ogg', fileName: null, fileSize: 3 };
+    const f = fakeMedia({ media: voice });
+    expect(await f.gateway.downloadMedia(10, 5, 100)).toEqual({ kind: 'voice', mimeType: 'audio/ogg', fileName: null, bytes: new Uint8Array([1, 2, 3]) });
+    expect(f.downloads).toEqual([voice]);
+  });
+
+  it('reports photos as image/jpeg', async () => {
+    const f = fakeMedia({ media: { type: 'photo', fileSize: 3 } });
+    expect(await f.gateway.downloadMedia(10, 5, 100)).toMatchObject({ kind: 'photo', mimeType: 'image/jpeg', fileName: null });
+  });
+
+  it('returns NOT_FOUND for a missing message or a text-only message', async () => {
+    await expect(fakeMedia(null).gateway.downloadMedia(10, 5, 100)).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    await expect(fakeMedia({ media: null }).gateway.downloadMedia(10, 5, 100)).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('refuses media without a file (poll, location)', async () => {
+    const f = fakeMedia({ media: { type: 'poll' } });
+    await expect(f.gateway.downloadMedia(10, 5, 100)).rejects.toMatchObject({ code: 'VALIDATION' });
+    expect(f.downloads).toEqual([]);
+  });
+
+  it('refuses files above the size cap before downloading', async () => {
+    const f = fakeMedia({ media: { type: 'video', mimeType: 'video/mp4', fileName: null, fileSize: 101 } });
+    await expect(f.gateway.downloadMedia(10, 5, 100)).rejects.toMatchObject({ code: 'VALIDATION' });
+    expect(f.downloads).toEqual([]);
+  });
+});

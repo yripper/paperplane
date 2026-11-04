@@ -9,6 +9,7 @@ export interface AppPaths {
   mtcuteDb: string;
   lock: string;
   style: string;
+  media: string;
 }
 
 /// Every on-disk location derives from one root so backing up ~/.paperplane
@@ -22,6 +23,7 @@ export function resolvePaths(env: NodeJS.ProcessEnv = process.env): AppPaths {
     mtcuteDb: join(home, 'mtcute.db'),
     lock: join(home, 'paperplane.lock'),
     style: join(home, 'style.md'),
+    media: join(home, 'media'),
   };
 }
 

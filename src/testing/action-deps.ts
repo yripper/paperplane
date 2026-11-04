@@ -1,3 +1,6 @@
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { ActionDeps } from '../actions/context.js';
 import { PerKeyGap, RateLimiter } from '../domain/rate-limiter.js';
 import { AuditRepo } from '../store/audit-repo.js';
@@ -35,6 +38,7 @@ export function makeActionDeps(over: { sendsPerMinute?: number; destructivePerMi
       destructive: new RateLimiter(over.destructivePerMinute ?? 30, 60_000, nowMs),
     },
     now: nowSec,
+    mediaDir: mkdtempSync(join(tmpdir(), 'paperplane-media-')),
     newId: () => `plan-${++ids}`,
     // Records instead of waiting, so paced loops stay fast and assertable.
     sleep: async (ms: number) => {

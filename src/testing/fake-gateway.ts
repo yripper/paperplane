@@ -1,4 +1,5 @@
-import type { DeleteMode, TelegramGateway, TgDialog, TgFolder, TgMessage, TgPeer, TgSender } from '../telegram/types.js';
+import { AppError } from '../domain/errors.js';
+import type { DeleteMode, TelegramGateway, TgDialog, TgFolder, TgMedia, TgMessage, TgPeer, TgSender } from '../telegram/types.js';
 import { peer, tgMessage } from './fixtures.js';
 
 /// In-memory Telegram for tests. Records every call; failures are injectable
@@ -10,6 +11,8 @@ export class FakeGateway implements TelegramGateway {
   folders: TgFolder[] = [];
   peers = new Map<number, TgPeer>();
   users = new Map<number, TgSender>();
+  /** Keyed `${chatId}:${messageId}`. */
+  media = new Map<string, TgMedia>();
   readonly calls: { method: string; args: unknown[] }[] = [];
   failDialogsAfter: number | null = null;
   failHistoryFor = new Set<number>();
@@ -127,6 +130,17 @@ export class FakeGateway implements TelegramGateway {
 
   async leaveChat(chatId: number): Promise<void> {
     this.record('leaveChat', [chatId]);
+  }
+
+  async deleteGroup(chatId: number): Promise<void> {
+    this.record('deleteGroup', [chatId]);
+  }
+
+  async downloadMedia(chatId: number, messageId: number, maxBytes: number): Promise<TgMedia> {
+    this.record('downloadMedia', [chatId, messageId, maxBytes]);
+    const media = this.media.get(`${chatId}:${messageId}`);
+    if (!media) throw new AppError('NOT_FOUND', `message ${messageId} has no media`);
+    return media;
   }
 
   async blockUser(userId: number): Promise<void> {

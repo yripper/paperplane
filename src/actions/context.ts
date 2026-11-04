@@ -18,6 +18,8 @@ export interface ActionDeps {
   limits: { sends: RateLimiter; chatGap: PerKeyGap; destructive: RateLimiter };
   /** Unix seconds. */
   now: () => number;
+  /** Where download_media saves files: ~/.paperplane/media in the daemon. */
+  mediaDir: string;
   newId: () => string;
   /// Injected so tests of paced loops (cleanup remove mode) run instantly.
   sleep: (ms: number) => Promise<void>;

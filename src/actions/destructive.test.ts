@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { makeActionDeps } from '../testing/action-deps.js';
-import { blockUser, deleteChat, leaveChat } from './destructive.js';
+import { AppError } from '../domain/errors.js';
+import { blockUser, deleteChat, deleteGroup, leaveChat } from './destructive.js';
 
 let t: ReturnType<typeof makeActionDeps>;
 
@@ -63,5 +64,40 @@ describe('leaveChat and blockUser', () => {
   it('blocks a user', async () => {
     await blockUser(t.deps, { userId: 10 });
     expect(t.gateway.callsTo('blockUser')).toEqual([[10]]);
+  });
+});
+
+describe('deleteGroup', () => {
+  beforeEach(() => {
+    t.store.chats.ensure({ id: -42, type: 'group', title: 'Old Group', username: null }, 'normal', 0);
+  });
+
+  it('deletes a group for everyone with the exact title and purges it locally', async () => {
+    await deleteGroup(t.deps, { chatId: -42, confirmTitle: 'Old Group' });
+    expect(t.gateway.callsTo('deleteGroup')).toEqual([[-42]]);
+    expect(t.store.chats.get(-42)).toBeNull();
+  });
+
+  it('covers supergroups and channels too', async () => {
+    await deleteGroup(t.deps, { chatId: -1001234567890, confirmTitle: 'Team' });
+    expect(t.gateway.callsTo('deleteGroup')).toEqual([[-1001234567890]]);
+  });
+
+  it('refuses a missing or inexact title before calling Telegram', async () => {
+    await expect(deleteGroup(t.deps, { chatId: -42, confirmTitle: '' })).rejects.toMatchObject({ code: 'VALIDATION' });
+    await expect(deleteGroup(t.deps, { chatId: -42, confirmTitle: 'old group' })).rejects.toMatchObject({ code: 'VALIDATION' });
+    expect(t.gateway.callsTo('deleteGroup')).toHaveLength(0);
+  });
+
+  it('points private chats to delete_chat', async () => {
+    await expect(deleteGroup(t.deps, { chatId: 10, confirmTitle: 'Alice Example' })).rejects.toMatchObject({ code: 'VALIDATION' });
+    expect(t.gateway.callsTo('deleteGroup')).toHaveLength(0);
+  });
+
+  it('keeps the chat when Telegram refuses (not the owner) and audits the error', async () => {
+    t.gateway.failOn.set('deleteGroup', new AppError('FORBIDDEN', 'only the owner can delete this chat'));
+    await expect(deleteGroup(t.deps, { chatId: -42, confirmTitle: 'Old Group' })).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    expect(t.store.chats.get(-42)).not.toBeNull();
+    expect(t.audit.recent(1)[0]).toMatchObject({ action: 'delete_group', outcome: 'error' });
   });
 });

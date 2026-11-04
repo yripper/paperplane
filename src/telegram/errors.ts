@@ -24,6 +24,8 @@ export function mapTelegramError(e: unknown): AppError {
   if (tl.RpcError.is(e)) {
     if (AUTH_ERRORS.has(e.text)) return new AppError('AUTH_REQUIRED', 'Telegram session is not valid: run `pm2 stop paperplane && paperplane login && pm2 start paperplane`');
     if (NOT_FOUND_ERRORS.test(e.text)) return new AppError('NOT_FOUND', `Telegram: ${e.text}`);
+    // 400, not 403: Telegram's answer when someone other than the owner deletes a group.
+    if (e.text === 'CHAT_ADMIN_REQUIRED') return new AppError('FORBIDDEN', `Telegram refused: ${e.text}`);
     if (e.code === 403) return new AppError('FORBIDDEN', `Telegram refused: ${e.text}`);
     return new AppError('INTERNAL', `Telegram error ${e.code} ${e.text}`);
   }
