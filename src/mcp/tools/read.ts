@@ -1,6 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { requireChat } from '../../actions/context.js';
+import { downloadMedia } from '../../actions/media.js';
 import { effectiveStatus } from '../../domain/pending.js';
 import { listPending } from '../../store/pending-query.js';
 import type { MessageRow } from '../../store/types.js';
@@ -99,6 +100,17 @@ export function registerReadTools(server: McpServer, d: ToolDeps): void {
         const senders = new Map(found.flatMap((m) => (m.sender ? [[m.sender.id, { ...m.sender, updatedAt: 0 }] as const] : [])));
         return found.map((m) => ({ chatId: m.chat.id, chatTitle: m.chat.title, ...formatMessage(toMessageRow(m, false), senders) }));
       }),
+  );
+
+  server.registerTool(
+    'download_media',
+    {
+      description:
+        "Download a message's photo, voice note, audio, video, sticker or document to ~/.paperplane/media/<chat>/<message>.<ext> and return its local path. Use it on messages whose media field is set. Open the path with your file reading tool to view a photo; audio is not transcribed. Files over 50 MB are refused. A second call for the same message returns the saved file without calling Telegram.",
+      inputSchema: { chat_id: chatId, message_id: z.number().int().positive() },
+      annotations: { ...READ, openWorldHint: true },
+    },
+    (a) => run(() => downloadMedia(d.actions, { chatId: a.chat_id, messageId: a.message_id })),
   );
 
   server.registerTool(

@@ -34,6 +34,22 @@ export async function leaveChat(d: ActionDeps, input: { chatId: number }): Promi
   d.chats.purge(chat.id);
 }
 
+/// Deletes the group itself for every member, not just my copy. Telegram only
+/// allows the owner; anyone else gets FORBIDDEN and the chat stays.
+export async function deleteGroup(d: ActionDeps, input: { chatId: number; confirmTitle: string }): Promise<void> {
+  const chat = requireChat(d, input.chatId);
+  if (chat.type === 'user' || chat.type === 'bot') {
+    throw new AppError('VALIDATION', 'delete_group is for groups, supergroups and channels; use delete_chat for private chats');
+  }
+  // Irreversible for everyone, so same exact-title guard as revoke.
+  if (input.confirmTitle !== chat.title) {
+    throw new AppError('VALIDATION', 'delete_group deletes for everyone: confirm_title must exactly match the chat title');
+  }
+  acquire(d.limits.destructive.tryAcquire());
+  await audited(d, 'delete_group', chat.id, () => d.gateway.deleteGroup(chat.id));
+  d.chats.purge(chat.id);
+}
+
 export async function blockUser(d: ActionDeps, input: { userId: number }): Promise<void> {
   acquire(d.limits.destructive.tryAcquire());
   await audited(d, 'block_user', input.userId, () => d.gateway.blockUser(input.userId));

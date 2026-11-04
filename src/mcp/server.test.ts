@@ -28,17 +28,33 @@ describe('MCP tools', () => {
     expect([...byName.keys()].sort()).toEqual(
       [
         'archive_chats', 'block_user', 'clear_label', 'cleanup_apply', 'cleanup_plan', 'create_folder', 'delete_chat',
-        'delete_folder', 'edit_folder', 'get_chat_info', 'get_pending', 'leave_chat', 'list_chats', 'list_folders',
+        'delete_folder', 'delete_group', 'download_media', 'edit_folder', 'get_chat_info', 'get_pending', 'leave_chat', 'list_chats', 'list_folders',
         'mark_read', 'mute_chat', 'read_history', 'save_draft', 'search_messages', 'send_message', 'set_label',
         'set_watch_level', 'status', 'unarchive_chats', 'unmute_chat',
       ].sort(),
     );
-    for (const name of ['delete_chat', 'leave_chat', 'block_user', 'cleanup_apply']) {
+    for (const name of ['delete_chat', 'delete_group', 'leave_chat', 'block_user', 'cleanup_apply']) {
       expect(byName.get(name)?.annotations?.destructiveHint).toBe(true);
     }
-    for (const name of ['status', 'list_chats', 'get_pending', 'read_history', 'search_messages', 'get_chat_info']) {
+    for (const name of ['status', 'list_chats', 'get_pending', 'read_history', 'search_messages', 'get_chat_info', 'download_media']) {
       expect(byName.get(name)?.annotations?.readOnlyHint).toBe(true);
     }
+  });
+
+  it('download_media saves the file and returns its path', async () => {
+    t.gateway.media.set('10:1', { kind: 'photo', mimeType: 'image/jpeg', fileName: null, bytes: new Uint8Array([1, 2, 3]) });
+    const res = await call('download_media', { chat_id: 10, message_id: 1 });
+    expect(res.isError).toBe(false);
+    expect(JSON.parse(res.text)).toMatchObject({ kind: 'photo', mimeType: 'image/jpeg', size: 3, cached: false });
+    expect(JSON.parse(res.text).path.endsWith('/10/1.jpg')).toBe(true);
+  });
+
+  it('delete_group refuses without the exact title', async () => {
+    t.store.chats.ensure({ id: -42, type: 'group', title: 'Old Group', username: null }, 'normal', 0);
+    const res = await call('delete_group', { chat_id: -42, confirm_title: 'old group' });
+    expect(res.isError).toBe(true);
+    expect(res.text.startsWith('VALIDATION:')).toBe(true);
+    expect(t.gateway.callsTo('deleteGroup')).toHaveLength(0);
   });
 
   it('sends the usage instructions on initialize', async () => {

@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { applyCleanupPlan, createCleanupPlan } from '../../actions/cleanup.js';
-import { blockUser, deleteChat, leaveChat } from '../../actions/destructive.js';
+import { blockUser, deleteChat, deleteGroup, leaveChat } from '../../actions/destructive.js';
 import { run } from '../result.js';
 import type { ToolDeps } from '../server.js';
 import { DESTRUCTIVE, READ } from './annotations.js';
@@ -26,6 +26,17 @@ export function registerDestructiveTools(server: McpServer, d: ToolDeps): void {
     'leave_chat',
     { description: 'Leave a group, supergroup or channel. Confirm with the user first.', inputSchema: { chat_id: z.number().int() }, annotations: DESTRUCTIVE },
     (a) => run(() => leaveChat(d.actions, { chatId: a.chat_id })),
+  );
+
+  server.registerTool(
+    'delete_group',
+    {
+      description:
+        "Delete a group, supergroup or channel for EVERY member (not just leave it). Only the owner can do this; otherwise Telegram answers FORBIDDEN, so use leave_chat instead. Requires confirm_title equal to the chat's exact title. Confirm with the user first.",
+      inputSchema: { chat_id: z.number().int(), confirm_title: z.string().min(1).max(256) },
+      annotations: DESTRUCTIVE,
+    },
+    (a) => run(() => deleteGroup(d.actions, { chatId: a.chat_id, confirmTitle: a.confirm_title })),
   );
 
   server.registerTool(

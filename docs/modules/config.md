@@ -2,7 +2,7 @@
 
 > **Living document.** Read this before modifying the module. Update it in the same change whenever the module's behavior, public surface, files, or dependencies change.
 
-**Source:** `src/config/` · **Last verified:** 2026-10-16 (`style.md` path)
+**Source:** `src/config/` · **Last verified:** 2026-11-05 (`media` dir)
 
 ## Purpose
 
@@ -12,7 +12,7 @@ Resolves where Paperplane keeps its state (the `~/.paperplane` layout, overridab
 
 | File | Purpose |
 |---|---|
-| `paths.ts` | `AppPaths` layout (`config.json`, `paperplane.db`, `mtcute.db`, `paperplane.lock`, optional `style.md`) and home-dir creation |
+| `paths.ts` | `AppPaths` layout (`config.json`, `paperplane.db`, `mtcute.db`, `paperplane.lock`, optional `style.md`, `media/` for `download_media`) and home-dir creation |
 | `config.ts` | zod `configSchema`, load/save of `config.json`, `requireApiId` |
 | `paths.test.ts`, `config.test.ts` | Unit tests (temp dirs only) |
 
