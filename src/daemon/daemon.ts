@@ -7,7 +7,8 @@ import { PerKeyGap, RateLimiter } from '../domain/rate-limiter.js';
 import { startHttpServer } from '../mcp/http.js';
 import { buildInstructions, readStyleGuide } from '../mcp/instructions.js';
 import { buildServer, type StatusReport } from '../mcp/server.js';
-import { Keychain, SECRET_ACCOUNTS, type SecretStore } from '../secrets/keychain.js';
+import { SECRET_ACCOUNTS, type SecretStore } from '../secrets/keychain.js';
+import { createSecretStore } from '../secrets/platform.js';
 import { AuditRepo } from '../store/audit-repo.js';
 import { ChatsRepo } from '../store/chats-repo.js';
 import { CleanupPlansRepo } from '../store/cleanup-plans-repo.js';
@@ -54,8 +55,8 @@ interface Resources {
   closed?: boolean;
 }
 
-/// `secrets` is injectable so smoke tests never touch the real Keychain.
-export async function startDaemon(secrets: SecretStore = new Keychain()): Promise<void> {
+/// `secrets` is injectable so smoke tests never touch the real OS keyring.
+export async function startDaemon(secrets: SecretStore = createSecretStore()): Promise<void> {
   const log = createLogger();
   const paths = resolvePaths();
   ensureHome(paths);
