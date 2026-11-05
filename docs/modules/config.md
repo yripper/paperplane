@@ -6,7 +6,7 @@
 
 ## Purpose
 
-Resolves where Paperplane keeps its state (the `~/.paperplane` layout, overridable with `PAPERPLANE_HOME`) and loads/saves the zod-validated `config.json`. Secrets never live here; they are in the macOS Keychain.
+Resolves where Paperplane keeps its state (the `~/.paperplane` layout, overridable with `PAPERPLANE_HOME`) and loads/saves the zod-validated `config.json`. Secrets never live here; they are in the OS keyring (see `secrets.md`).
 
 ## Structure
 

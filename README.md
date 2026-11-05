@@ -1,12 +1,12 @@
 # Paperplane
 
-Paperplane is a local daemon I run on my Mac. It signs in to my personal Telegram account as a regular user client (MTProto, via [mtcute](https://mtcute.dev)), mirrors my chats into a SQLite database on disk, and serves an MCP server on `127.0.0.1` so Claude Code and Claude Desktop can read, track, answer and organize my conversations. Nothing is hosted: it is one process on my machine, talking only to Telegram.
+Paperplane is a local daemon I run on my Mac (it runs on Linux too; see [Linux](#linux)). It signs in to my personal Telegram account as a regular user client (MTProto, via [mtcute](https://mtcute.dev)), mirrors my chats into a SQLite database on disk, and serves an MCP server on `127.0.0.1` so Claude Code and Claude Desktop can read, track, answer and organize my conversations. Nothing is hosted: it is one process on my machine, talking only to Telegram.
 
 > **Status:** early development. Module docs live in [docs/modules](docs/modules/README.md).
 
 ## Requirements
 
-- macOS (secrets are stored in the Keychain through the built-in `security` CLI)
+- macOS (secrets are stored in the Keychain through the built-in `security` CLI) or Linux (secrets go to the Secret Service keyring through `secret-tool`; see [Linux](#linux))
 - Node >= 22 and [pnpm](https://pnpm.io)
 - [pm2](https://pm2.keymetrics.io) (`npm i -g pm2`) to keep the daemon running
 - Your own `api_id` and `api_hash` from [my.telegram.org](https://my.telegram.org)
@@ -18,7 +18,7 @@ pnpm install && pnpm build
 node dist/cli.js login
 ```
 
-`login` asks for your `api_id`, `api_hash`, phone number, the code Telegram sends you and, if you use one, your 2FA password. The `api_id` and `api_hash` are saved only after Telegram accepts the login; on later logins pressing Enter keeps the stored ones. The `api_hash` and the session keys go to the Keychain; nothing secret is written to disk in plain text. Use `pnpm link --global` if you want a `paperplane` command instead of `node dist/cli.js`.
+`login` asks for your `api_id`, `api_hash`, phone number, the code Telegram sends you and, if you use one, your 2FA password. The `api_id` and `api_hash` are saved only after Telegram accepts the login; on later logins pressing Enter keeps the stored ones. The `api_hash` and the session keys go to the OS keyring (Keychain on macOS, GNOME Keyring on Linux); nothing secret is written to disk in plain text. Use `pnpm link --global` if you want a `paperplane` command instead of `node dist/cli.js`.
 
 ## Run it
 
@@ -38,7 +38,7 @@ The log line `listening on http://127.0.0.1:7777/mcp (telegram auth: connecting)
 - **Claude Code:** a `claude mcp add --transport http ...` line with the bearer token.
 - **Claude Desktop:** a `mcpServers` entry that goes through `npx mcp-remote`. Desktop's Connectors run in Anthropic's cloud and cannot reach `localhost`, so a local stdio bridge is needed.
 
-The bearer token is 64 hex characters, generated on first use and kept in the Keychain. The server only accepts requests whose `Host` is `127.0.0.1:<port>` or `localhost:<port>`, which blocks DNS rebinding from a browser.
+The bearer token is 64 hex characters, generated on first use and kept in the OS keyring. The server only accepts requests whose `Host` is `127.0.0.1:<port>` or `localhost:<port>`, which blocks DNS rebinding from a browser.
 
 ## Permissions (important)
 
@@ -78,10 +78,47 @@ Notes on behavior:
 - The sweep that backstops live updates pages large gaps (up to 10 pages per chat) and skips purging chats that were touched while it ran. If a pass sees no dialogs at all, or would remove more than max(5, 25%) of the stored chats, it skips the purge (a glitch is likelier than real deletions) and flags it in `status`.
 - Rate limits reject instead of sleeping: 20 sends per minute, 1 s between sends to the same chat, 30 destructive actions per minute. Over the limit you get `RATE_LIMITED` with a retry time.
 
+## Linux
+
+Paperplane runs on Linux too; I've written these steps for Ubuntu. Everything works as on macOS except where secrets live: instead of the Keychain they go to the freedesktop Secret Service (GNOME Keyring on Ubuntu) through libsecret's `secret-tool`. There is no plaintext fallback, so the keyring is required.
+
+### Prerequisites
+
+- Node >= 22 (Ubuntu's apt package is usually older; use [NodeSource](https://github.com/nodesource/distributions) or nvm) and pnpm (`corepack enable` or `npm i -g pnpm`)
+- Build tools for the native SQLite module, in case no prebuilt binary matches: `sudo apt install build-essential python3`
+- `secret-tool`: `sudo apt install libsecret-tools`. Without it, `login`, `token` and `start` fail with a message telling you to install it.
+- A running, unlocked keyring on a D-Bus session bus:
+  - **Ubuntu desktop:** nothing to do. GNOME Keyring starts with your session and unlocks when you log in.
+  - **Headless server / SSH only:** install the keyring and a user session bus (`sudo apt install gnome-keyring dbus-user-session`), log in again so `/run/user/$(id -u)/bus` exists, then start and unlock the keyring in that session, e.g. `read -rs PW && printf '%s' "$PW" | gnome-keyring-daemon --unlock --components=secrets; unset PW`. The first unlock creates the login keyring with that password. A keyring is locked again after every reboot, so repeat the unlock before starting the daemon (then `pm2 restart paperplane`); while it's locked, Paperplane fails with a "keyring ... running and unlocked?" error instead of reading or writing secrets.
+
+Check it before logging in:
+
+```sh
+printf 'hello' | secret-tool store --label='paperplane check' service paperplane-check account test
+secret-tool lookup service paperplane-check account test   # prints hello
+secret-tool clear service paperplane-check account test
+```
+
+### Setup
+
+Same steps as on macOS:
+
+```sh
+pnpm install && pnpm build
+node dist/cli.js login
+npm i -g pm2
+pm2 start ecosystem.config.cjs
+pm2 save
+pm2 startup        # prints a sudo command that installs a systemd unit; run it once
+node dist/cli.js token
+```
+
+`pm2 startup` installs a systemd system unit that runs pm2 as your user but without your session's environment. Paperplane finds your session bus on its own at `/run/user/<uid>/bus`, which exists while you're logged in. On a headless server, also run `loginctl enable-linger $USER` so it exists after a reboot, and remember to unlock the keyring (above) before the daemon can read its secrets.
+
 ## Data and privacy
 
 - Everything lives in `~/.paperplane/` (config, message store, mtcute's peer cache, lock file). Back that folder up if you care about the labels and local history.
-- Secrets live in the macOS Keychain under the service `paperplane`: `api_hash`, the bearer token and the Telegram auth keys.
+- Secrets live in the OS keyring under the service `paperplane`: `api_hash`, the bearer token and the Telegram auth keys. On macOS that's the Keychain; on Linux it's the Secret Service keyring (items labeled `paperplane <name>`, with attributes `service=paperplane` and `account=<name>`). There is no plaintext fallback.
 - Nothing leaves the machine except Telegram API traffic. Message text is never written to logs or to the audit table.
 - Read Telegram's [API Terms of Service](https://core.telegram.org/api/terms) before using this. Section 1.5 restricts using Telegram data with AI systems, and you should judge for yourself whether your use fits.
 - Account safety: unofficial clients are watched by Telegram. Use your own `api_id`, keep the volume of actions human, and do not use it to spam.

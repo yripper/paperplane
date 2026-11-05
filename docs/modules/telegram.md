@@ -13,7 +13,7 @@ The only module that imports mtcute. Owns the MTProto user client (login, live u
 | File | Purpose |
 |---|---|
 | `client.ts` | Builds the `TelegramClient` with composite storage and log redirection |
-| `keychain-auth-keys.ts` | mtcute auth-key repository backed by macOS Keychain |
+| `keychain-auth-keys.ts` | mtcute auth-key repository backed by the OS keyring (`SecretStore`; Keychain on macOS, `secret-tool` on Linux) |
 | `adapt.ts` | mtcute `Message`/`Dialog`/`Peer` → plain `Tg*` types |
 | `types.ts` | Plain `Tg*` types and the `TelegramGateway` interface (no mtcute import) |
 | `gateway.ts` | mtcute implementation of `TelegramGateway`, wraps every call with error mapping |

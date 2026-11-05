@@ -1,14 +1,12 @@
-import { spawn } from 'node:child_process';
 import { AppError } from '../domain/errors.js';
+import { type CommandRunner, cliRunner } from './runner.js';
+
+export type { CommandRunner } from './runner.js';
 
 export interface SecretStore {
   get(account: string): Promise<string | null>;
   set(account: string, value: string): Promise<void>;
   delete(account: string): Promise<void>;
-}
-
-export interface CommandRunner {
-  run(args: string[], stdin?: string): Promise<{ code: number; stdout: string; stderr: string }>;
 }
 
 export const SECRET_ACCOUNTS = { apiHash: 'api_hash', bearerToken: 'bearer_token' } as const;
@@ -20,23 +18,10 @@ const ITEM_NOT_FOUND = 44;
 // characters that can't start a new argument or command (base64, hex, tokens).
 const SAFE_VALUE = /^[A-Za-z0-9+/=_.:-]+$/;
 
-export const securityCli: CommandRunner = {
-  run(args: string[], stdin?: string) {
-    return new Promise((resolve, reject) => {
-      const child = spawn('/usr/bin/security', args, { stdio: ['pipe', 'pipe', 'pipe'] });
-      let stdout = '';
-      let stderr = '';
-      child.stdout.on('data', (chunk: Buffer) => (stdout += chunk.toString()));
-      child.stderr.on('data', (chunk: Buffer) => (stderr += chunk.toString()));
-      child.on('error', reject);
-      child.on('close', (code) => resolve({ code: code ?? 1, stdout, stderr }));
-      // EPIPE when security exits before reading stdin would otherwise be an
-      // uncaught 'error' event; the close/error handlers already report failure.
-      child.stdin.on('error', () => {});
-      child.stdin.end(stdin ?? '');
-    });
-  },
-};
+export const securityCli: CommandRunner = cliRunner(
+  '/usr/bin/security',
+  '/usr/bin/security not found: the Keychain backend only works on macOS',
+);
 
 /// macOS Keychain via the built-in `security` CLI, so there's no native
 /// dependency. Writes go through `security -i` on stdin: secrets never appear
@@ -55,8 +40,8 @@ export class Keychain implements SecretStore {
   }
 
   async set(account: string, value: string): Promise<void> {
-    assertSafe(account);
-    assertSafe(value);
+    assertSafeSecret(account);
+    assertSafeSecret(value);
     const r = await this.runner.run(['-i'], `add-generic-password -U -s ${this.service} -a ${account} -w ${value}\n`);
     if (r.code !== 0) throw new AppError('INTERNAL', `keychain write failed for ${account} (exit ${r.code})`);
   }
@@ -69,6 +54,7 @@ export class Keychain implements SecretStore {
   }
 }
 
-function assertSafe(value: string): void {
+/// Shared by every backend so a value stored on one platform is valid on all.
+export function assertSafeSecret(value: string): void {
   if (!SAFE_VALUE.test(value)) throw new AppError('VALIDATION', 'keychain values must be base64/hex/token characters');
 }

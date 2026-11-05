@@ -10,15 +10,16 @@ import { acquireLock } from './daemon/lock.js';
 import { apiHashPrompt, apiIdPrompt, pickApiHash, pickApiId } from './daemon/login-input.js';
 import { connectionSnippets } from './daemon/snippets.js';
 import { ensureBearerToken } from './daemon/token.js';
-import { Keychain, SECRET_ACCOUNTS } from './secrets/keychain.js';
+import { SECRET_ACCOUNTS } from './secrets/keychain.js';
+import { createSecretStore } from './secrets/platform.js';
 import { KeychainAuthKeys } from './telegram/keychain-auth-keys.js';
 import { login, logout } from './telegram/session.js';
 
 const USAGE = `usage: paperplane <command>
-  login    log in to Telegram (interactive) and store secrets in Keychain
+  login    log in to Telegram (interactive) and store secrets in the OS keyring
   start    run the daemon (what pm2 runs)
   token    print the Claude Code / Claude Desktop connection setup
-  logout   log out of Telegram and remove Paperplane's Keychain items`;
+  logout   log out of Telegram and remove Paperplane's keyring items`;
 
 /// Hidden input mutes the readline output stream so passwords aren't echoed.
 async function ask(question: string, hidden = false): Promise<string> {
@@ -38,7 +39,7 @@ async function runLogin(): Promise<void> {
   ensureHome(paths);
   const lock = acquireLock(paths.lock);
   try {
-    const keychain = new Keychain();
+    const keychain = createSecretStore();
     const config = loadConfig(paths.config);
     // Always re-prompt, so a wrong apiId/api_hash from an earlier attempt can be
     // fixed; Enter keeps what's stored.
@@ -69,7 +70,7 @@ async function runLogin(): Promise<void> {
 
 async function runToken(): Promise<void> {
   const paths = resolvePaths();
-  const token = await ensureBearerToken(new Keychain());
+  const token = await ensureBearerToken(createSecretStore());
   stdout.write(`${connectionSnippets(loadConfig(paths.config).port, token)}\n`);
 }
 
@@ -77,7 +78,7 @@ async function runLogout(): Promise<void> {
   const paths = resolvePaths();
   const lock = acquireLock(paths.lock);
   try {
-    const keychain = new Keychain();
+    const keychain = createSecretStore();
     const config = loadConfig(paths.config);
     const apiHash = await keychain.get(SECRET_ACCOUNTS.apiHash);
     if (config.apiId !== undefined && apiHash) {
